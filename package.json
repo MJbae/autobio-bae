@@ -15,6 +15,8 @@
     "preview": "vitepress preview site --host 127.0.0.1",
     "typecheck": "vue-tsc --noEmit",
     "test": "node --test tests/content.test.mjs",
+    "test:sharing": "node --test tests/sharing.test.mjs",
+    "assets:share": "node scripts/generate-share-assets.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-family-library \"node --test tests/firestore.rules.test.mjs\"",
     "test:e2e": "playwright test",
     "test:comments": "firebase emulators:exec --only auth,firestore --project demo-family-library \"playwright test --config playwright.comments.config.ts\""

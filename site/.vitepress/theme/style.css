@@ -480,21 +480,6 @@ dialog::backdrop {
   color: var(--muted);
   margin-right: -10px;
 }
-.toc-row {
-  display: block;
-  width: 100%;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
-  min-height: 54px;
-  text-align: left;
-  font-size: 17px;
-  line-height: 1.7;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-}
-.toc-row:last-child {
-  border-bottom: 0;
-}
 .size-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -580,4 +565,15 @@ dialog::backdrop {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.story-content .decade-comments-link {
+  margin: 24px 0 32px;
+  font-size: 15px;
+}
+.story-content .decade-comments-link a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: none;
 }

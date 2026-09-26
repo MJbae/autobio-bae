@@ -37,7 +37,7 @@ function fixture(t) {
 test('원본을 수정하지 않고 열 개 연대와 전체글을 생성하며 모든 본문을 보존한다', (t) => {
   const { root, run, readPage } = fixture(t)
   const { catalog } = run()
-  assert.equal(catalog.title, '아버지의 이야기')
+  assert.equal(catalog.title, '아버지의 기록')
   assert.equal(catalog.chapters.length, 10)
   assert.equal(catalog.documents.length, 0)
   assert.deepEqual(

@@ -8,8 +8,8 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: '아버지의 이야기', exact: true })).toBeVisible()
-  const chapters = page.getByRole('navigation', { name: '연대별 이야기', exact: true })
+  await expect(page.getByRole('heading', { name: '아버지의 기록', exact: true })).toBeVisible()
+  const chapters = page.getByRole('navigation', { name: '연대별 소재', exact: true })
   await expect(chapters.locator('a.chapter-row')).toHaveCount(10)
   await expect(page.locator('.resume-link')).toHaveCount(0)
   await expect(page.getByRole('searchbox')).toHaveCount(0)
@@ -38,7 +38,7 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   expect(errors).toEqual([])
 })
 
-test('큰 글씨와 읽던 위치를 기억하고 목차로 본문에 이동한다', async ({ page }) => {
+test('큰 글씨와 읽던 위치를 기억한다', async ({ page }) => {
   await page.goto('read/1980s.html')
   await expect(page.locator('.story-content')).toContainText('새마을정미소')
   await page.getByRole('button', { name: '글자 크기', exact: true }).click()
@@ -50,12 +50,10 @@ test('큰 글씨와 읽던 위치를 기억하고 목차로 본문에 이동한�
   await expect(page.locator('.library')).toHaveClass(/font-2/)
   await expectNoHorizontalOverflow(page)
 
-  await page.getByRole('button', { name: '목차', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '목차', exact: true })
-  await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: '창고를 짓기 전, 방수포 아래의 벼를 지키다' }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page).toHaveURL(/#.+/)
+  await expect(page.getByRole('button', { name: '목차', exact: true })).toHaveCount(0)
+  await page
+    .getByRole('heading', { name: '창고를 짓기 전, 방수포 아래의 벼를 지키다', exact: true })
+    .scrollIntoViewIfNeeded()
   await expect
     .poll(async () =>
       page.evaluate(
@@ -74,7 +72,7 @@ test('큰 글씨와 읽던 위치를 기억하고 목차로 본문에 이동한�
   await expect(page.locator('#comments')).toHaveCount(0)
 })
 
-test('키보드로 읽기 설정을 열고 목차를 닫을 수 있다', async ({ page }) => {
+test('키보드로 글자 크기를 조절하고 설정을 닫을 수 있다', async ({ page }) => {
   await page.goto('read/1980s.html')
   await page.keyboard.press('Tab')
   await expect(page.getByRole('link', { name: '본문으로 건너뛰기' })).toBeFocused()
@@ -92,19 +90,15 @@ test('키보드로 읽기 설정을 열고 목차를 닫을 수 있다', async (
   await expectNoHorizontalOverflow(page)
   await page.keyboard.press('Escape')
 
-  const tocTrigger = page.getByRole('button', { name: '목차', exact: true })
-  await tocTrigger.focus()
-  await page.keyboard.press('Enter')
-  const dialog = page.getByRole('dialog', { name: '목차', exact: true })
-  await expect(dialog).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(dialog).not.toBeVisible()
-  await expect(tocTrigger).toBeFocused()
+  await expect(settings).not.toBeVisible()
+  await expect(fontTrigger).toBeFocused()
+  await expect(page.getByRole('button', { name: '목차', exact: true })).toHaveCount(0)
+  await expect(page.locator('#toc-dialog')).toHaveCount(0)
 })
 
 test('전체 글을 한 번에 읽고 잘못된 주소에서 목록으로 돌아온다', async ({ page }) => {
   await page.goto('./')
-  await page.getByRole('link', { name: '전체 이야기 읽기', exact: true }).click()
+  await page.getByRole('link', { name: '전체 소재 보기', exact: true }).click()
   await expect(page).toHaveURL(/\/read\/life-story\.html$/)
   await expect(page.locator('.story-content')).toContainText('이 연대기를 움직이는 인과')
   await expect(page.locator('.story-content')).toContainText('약 1,000ha')

@@ -34,13 +34,17 @@ const displayTitle = computed(() => title.value.replace(/^\d{4}년대\s*[—–-
 const articleLabel = computed(
   () => frontmatter.value.decade || (frontmatter.value.kind === 'full' ? '전체 이야기' : '')
 )
+const showComments = computed(
+  () => commentsEnabled && Boolean(pageId.value) && frontmatter.value.kind !== 'full'
+)
+const commentHeading = computed(() =>
+  frontmatter.value.decade ? `${frontmatter.value.decade} 댓글` : '댓글'
+)
 const fontSize = ref(1)
 const sizeLabels = ['보통', '크게', '더 크게']
 const lastRead = ref<SavedReading | null>(null)
 const story = ref<HTMLElement>()
-const contentsDialog = ref<HTMLDialogElement>()
 const settingsDialog = ref<HTMLDialogElement>()
-const toc = ref<{ id: string; text: string }[]>([])
 const commentsSentinel = ref<HTMLElement>()
 const commentsReady = ref(false)
 const storageKey = 'family-library:reading'
@@ -67,7 +71,6 @@ function openDialog(dialog?: HTMLDialogElement) {
   if (dialog && !dialog.open) dialog.showModal()
 }
 function closeDialogs() {
-  contentsDialog.value?.close()
   settingsDialog.value?.close()
 }
 function closeOnBackdrop(event: MouseEvent) {
@@ -81,13 +84,6 @@ function closeOnBackdrop(event: MouseEvent) {
     event.clientY > bounds.bottom
   )
     dialog.close()
-}
-function jumpHeading(id: string) {
-  closeDialogs()
-  const heading = document.getElementById(id)
-  heading?.focus({ preventScroll: true })
-  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`)
 }
 function setFont(size: number) {
   fontSize.value = size
@@ -125,16 +121,9 @@ async function setupPage() {
   cancelAnimationFrame(scrollFrame)
   scrollFrame = 0
   commentsReady.value = false
-  toc.value = []
   await nextTick()
   if (version !== setupVersion || !story.value) return
-  toc.value = Array.from(story.value.querySelectorAll<HTMLHeadingElement>('h2[id], h3[id]')).map(
-    (heading) => ({
-      id: heading.id,
-      text: (heading.textContent || '').replace(/\u200b|#$/g, '').trim(),
-    })
-  )
-  if (commentsEnabled && commentsSentinel.value) {
+  if (showComments.value && commentsSentinel.value) {
     commentsObserver = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && version === setupVersion) {
@@ -210,8 +199,8 @@ onBeforeUnmount(() => {
 
     <main v-if="isHome" id="main" tabindex="-1" class="home-main">
       <header class="home-heading">
-        <h1>아버지의 이야기</h1>
-        <p>아버지께서 걸어오신 길을 함께 읽습니다.</p>
+        <h1>아버지의 기록</h1>
+        <p>자서전을 준비하며, 연대별 기억과 소재를 모읍니다.</p>
       </header>
       <a v-if="lastRead" class="resume-link" :href="lastRead.url" @click="resumeReading">
         <span
@@ -219,7 +208,7 @@ onBeforeUnmount(() => {
         >
         <Icon name="chevron" :size="16" />
       </a>
-      <nav class="chapter-list" aria-label="연대별 이야기">
+      <nav class="chapter-list" aria-label="연대별 소재">
         <a
           v-for="chapter in catalog.chapters"
           :key="chapter.id"
@@ -234,7 +223,7 @@ onBeforeUnmount(() => {
         </a>
       </nav>
       <a class="whole-story-link" :href="withBase(catalog.fullStory.url)"
-        >전체 이야기 읽기 <Icon name="chevron" :size="14"
+        >전체 소재 보기 <Icon name="chevron" :size="14"
       /></a>
       <section
         v-if="catalog.documents.length"
@@ -271,14 +260,6 @@ onBeforeUnmount(() => {
             >
               글자 크기
             </button>
-            <button
-              v-if="toc.length > 1"
-              class="toc-button"
-              aria-haspopup="dialog"
-              @click="openDialog(contentsDialog)"
-            >
-              목차
-            </button>
           </div>
         </nav>
       </header>
@@ -288,6 +269,22 @@ onBeforeUnmount(() => {
           <h1>{{ displayTitle }}</h1>
         </header>
         <article ref="story" class="story-content"><Content /></article>
+        <section
+          v-if="showComments"
+          id="comments"
+          ref="commentsSentinel"
+          class="comments-anchor"
+          :aria-label="commentHeading"
+        >
+          <ClientOnly
+            ><CommentsSection
+              v-if="commentsReady"
+              :key="pageId"
+              :page-id="pageId"
+              :page-title="title"
+              :heading="commentHeading"
+          /></ClientOnly>
+        </section>
         <nav
           v-if="frontmatter.prev || frontmatter.next"
           class="chapter-navigation"
@@ -303,50 +300,9 @@ onBeforeUnmount(() => {
             ><span>{{ frontmatter.next.title.replace(/\s*[—–-].*$/, '') }}</span></a
           >
         </nav>
-        <section
-          v-if="commentsEnabled && pageId"
-          id="comments"
-          ref="commentsSentinel"
-          class="comments-anchor"
-          aria-label="의견"
-        >
-          <ClientOnly
-            ><CommentsSection
-              v-if="commentsReady"
-              :key="pageId"
-              :page-id="pageId"
-              :page-title="title"
-          /></ClientOnly>
-        </section>
       </main>
     </template>
 
-    <dialog
-      id="toc-dialog"
-      ref="contentsDialog"
-      class="contents-dialog"
-      aria-labelledby="contents-title"
-      @click="closeOnBackdrop"
-    >
-      <div class="dialog-body">
-        <header class="dialog-heading">
-          <h2 id="contents-title">목차</h2>
-          <button class="close-button" aria-label="목차 닫기" @click="closeDialogs">
-            <Icon name="close" :size="21" />
-          </button>
-        </header>
-        <nav aria-label="현재 이야기의 목차">
-          <button
-            v-for="heading in toc"
-            :key="heading.id"
-            class="toc-row"
-            @click="jumpHeading(heading.id)"
-          >
-            {{ heading.text }}
-          </button>
-        </nav>
-      </div>
-    </dialog>
     <dialog
       ref="settingsDialog"
       class="reading-settings"

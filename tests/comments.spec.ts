@@ -9,6 +9,7 @@ const commentsFor = (pageId: string) => `${documentsBase}/pages/${pageId}/commen
 async function openComments(page: Page, decade = '1930') {
   await page.goto(`/read/${decade}s.html#comments`)
   await page.locator('#comments').scrollIntoViewIfNeeded()
+  await expect(page.getByRole('heading', { name: `${decade}년대 댓글`, exact: true })).toBeVisible()
   await expect(page.locator('.comment-composer')).toBeVisible()
   await expect(page.locator('.comments-status')).toHaveCount(0)
 }
@@ -116,6 +117,7 @@ test('a mobile visitor posts without signing in; another browser reads the store
 
 test('names survive reloads, drafts stay with their article, and posted comments do not leak into another article', async ({
   page,
+  browser,
   request,
 }) => {
   const draft = '1930년대 이야기는 큰아버지께 확인하고 싶어요.'
@@ -134,6 +136,7 @@ test('names survive reloads, drafts stay with their article, and posted comments
     .click()
   await expect(page).toHaveURL(/\/read\/1940s\.html$/)
   await showComments(page)
+  await expect(page.getByRole('heading', { name: '1940년대 댓글', exact: true })).toBeVisible()
   await expect(page.getByLabel(/^이름/)).toHaveValue('큰아들')
   await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue('')
   await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(published)
@@ -153,6 +156,91 @@ test('names survive reloads, drafts stay with their article, and posted comments
   await expect(page.locator('.comment-item')).toHaveCount(0)
   expect(await storedComments(request, 'life-1930s')).toHaveLength(0)
   expect(await storedComments(request, 'life-1940s')).toHaveLength(1)
+
+  // A second visitor can publish immediately without bypassing the real
+  // per-visitor cooldown. Both decades must remain isolated in Firestore.
+  const otherContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    locale: 'ko-KR',
+    reducedMotion: 'reduce',
+    baseURL: 'http://127.0.0.1:4175',
+  })
+  const earlierMemory = '1930년대 중장리 집 이야기를 더 들려주세요.'
+  try {
+    const otherPage = await otherContext.newPage()
+    await openComments(otherPage)
+    await expect(otherPage.locator('.comment-item')).toHaveCount(0)
+    await otherPage.getByLabel(/^이름/).fill('둘째')
+    await otherPage.getByLabel('남기고 싶은 이야기', { exact: true }).fill(earlierMemory)
+    await otherPage
+      .locator('.comment-composer')
+      .getByRole('button', { name: '댓글 남기기', exact: true })
+      .click()
+    await expect(otherPage.locator('.comment-body')).toHaveText(earlierMemory)
+    await openComments(otherPage, '1940')
+    await expect(otherPage.locator('.comment-body')).toHaveText(published)
+    await expect(otherPage.getByText(earlierMemory, { exact: true })).toHaveCount(0)
+
+    await page.reload()
+    await showComments(page)
+    await expect(page.getByRole('heading', { name: '1930년대 댓글', exact: true })).toBeVisible()
+    await expect(page.locator('.comment-body')).toHaveText(earlierMemory)
+    await expect(page.getByText(published, { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(draft)
+
+    const earlierComments = await storedComments(request, 'life-1930s')
+    const laterComments = await storedComments(request, 'life-1940s')
+    expect(earlierComments).toHaveLength(1)
+    expect(laterComments).toHaveLength(1)
+    expect(earlierComments[0].fields.body.stringValue).toBe(earlierMemory)
+    expect(laterComments[0].fields.body.stringValue).toBe(published)
+    expect(earlierComments[0].fields.uid.stringValue).not.toBe(
+      laterComments[0].fields.uid.stringValue
+    )
+  } finally {
+    await otherContext.close()
+  }
+})
+
+test('the full story links each decade to its own comments and has no combined thread', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/read/life-story.html')
+  await expect(page.locator('#comments, .comment-composer')).toHaveCount(0)
+  const decadeLinks = page.getByRole('link', { name: /^\d{4}년대 댓글 남기기$/ })
+  await expect(decadeLinks).toHaveCount(10)
+  for (let decade = 1930; decade <= 2020; decade += 10) {
+    await expect(
+      page.getByRole('link', { name: `${decade}년대 댓글 남기기`, exact: true })
+    ).toHaveAttribute('href', `/read/${decade}s.html#comments`)
+  }
+
+  const commentLink = page.getByRole('link', { name: '1930년대 댓글 남기기', exact: true })
+  await commentLink.click()
+  await expect(page).toHaveURL(/\/read\/1930s\.html#comments$/)
+  await showComments(page)
+  await expect(page.getByRole('heading', { name: '1930년대 댓글', exact: true })).toBeVisible()
+  const memory = '전체 이야기를 읽다가 중장리 기억을 남겨요.'
+  await page.getByLabel(/^이름/).fill('큰딸')
+  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(memory)
+  await page
+    .locator('.comment-composer')
+    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .click()
+  await expect(page.locator('.comment-body')).toHaveText(memory)
+
+  await page.goto('/read/life-story.html')
+  await expect(page.locator('#comments, .comment-composer')).toHaveCount(0)
+  await page.getByRole('link', { name: '1930년대 댓글 남기기', exact: true }).click()
+  await showComments(page)
+  await expect(page.locator('.comment-body')).toHaveText(memory)
+  const saved = await storedComments(request, 'life-1930s')
+  expect(saved).toHaveLength(1)
+  expect(saved[0].fields.body.stringValue).toBe(memory)
+  expect(await storedComments(request, 'life-story')).toHaveLength(0)
 })
 
 test('empty fields are explained and HTML in a posted name or comment is displayed as plain text', async ({

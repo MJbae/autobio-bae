@@ -37,6 +37,8 @@ jobs:
         run: npm test
       - name: Build site
         run: npm run build
+      - name: Check sharing metadata and icons
+        run: npm run test:sharing
       - name: Check types
         run: npm run typecheck
       - name: Upload Pages artifact

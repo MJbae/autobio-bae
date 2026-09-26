@@ -232,7 +232,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
 
   const fullStory = {
     id: 'life-story',
-    title: '연대별 이야기 전체 읽기',
+    title: '연대별 소재 전체 보기',
     url: '/read/life-story.html',
     minutes: readingMinutes(main.body),
   }
@@ -362,7 +362,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
     })
   )
   const catalog = {
-    title: '아버지의 이야기',
+    title: '아버지의 기록',
     introduction: plainText(main.body.slice(0, sections[0].start).replace(/^# [^\r\n]+\r?\n/, '')),
     chapters,
     documents,

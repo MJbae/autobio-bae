@@ -7,7 +7,9 @@ import {
   type FamilyComment,
 } from '../lib/comments'
 
-const props = defineProps<{ pageId: string; pageTitle: string }>()
+const props = withDefaults(defineProps<{ pageId: string; pageTitle: string; heading?: string }>(), {
+  heading: '댓글',
+})
 type ReplyContext = Pick<FamilyComment, 'id' | 'author' | 'body'>
 type Draft = { body: string; replyTo: ReplyContext | null }
 
@@ -306,7 +308,7 @@ defineExpose({ focusComposer })
     aria-labelledby="comments-heading"
     tabindex="-1"
   >
-    <h2 id="comments-heading">의견</h2>
+    <h2 id="comments-heading">{{ heading }}</h2>
 
     <form
       ref="composer"
