@@ -1,8 +1,10 @@
-# 배병희의 기록 · 우리 가족의 서재
+# 아버지의 이야기
 
-Markdown 원고를 GitHub에 올리면 모바일 서재로 배포됩니다. 가족은 앱 설치나 회원가입 없이 글을 읽고, 이름과 내용만 적어 댓글과 답글을 남깁니다. VitePress와 GitHub Pages로 본문을 제공하고, 댓글은 Firebase에 저장합니다.
+아버지께서 걸어오신 길을 함께 읽습니다. Markdown 원고를 GitHub에 올리면 가족이 앱 설치나 회원가입 없이 읽을 수 있는 모바일 사이트로 배포됩니다. VitePress와 GitHub Pages로 본문을 제공하며, Firebase 댓글은 추후 연결할 예정입니다.
 
-연대별 목차, 세 단계 글자 크기, 읽던 위치 이어 읽기, 모바일 하단 읽기 도구, 제목·소개 검색을 제공합니다. 원본 `연대별_서사_소재_정리.md`는 그대로 두고 1930~2020년대의 열 편과 전체 글을 자동 생성합니다. 마지막 「이 연대기를 움직이는 인과」는 전체 글에 포함됩니다.
+첫 화면의 연대별 목록에서 이야기를 골라 읽습니다. 읽기 화면 상단에는 목록과 글자 크기만 두고, 소제목이 여러 개 있는 글에는 목차를 제공합니다. 같은 브라우저에서는 세 단계 글자 크기와 읽던 위치를 기억하여 이어 읽을 수 있습니다. 검색·필터, 카드 장식, 하단 도구 모음, 예상 읽기 시간과 진행률은 표시하지 않습니다.
+
+원본 `연대별_서사_소재_정리.md`는 그대로 두고 1930~2020년대의 열 편과 전체 글을 자동 생성합니다. 마지막 「이 연대기를 움직이는 인과」는 전체 글에 포함됩니다. 추가한 Markdown 자료가 있을 때만 첫 화면에 자료 목록이 나타납니다.
 
 ## 로컬에서 실행
 
@@ -15,7 +17,7 @@ npm run dev
 
 터미널에 나온 주소의 `/autobio-bae/`에서 확인합니다. 기본 주소는 `http://127.0.0.1:5173/autobio-bae/`입니다. 서버가 실행 중일 때 원본 Markdown을 추가·수정했다면 개발 서버를 다시 시작하거나 별도 터미널에서 `npm run prepare:content`를 실행합니다.
 
-Firebase를 아직 연결하지 않아도 읽기는 동작합니다. 댓글 영역에는 준비 중이라는 안내가 표시되고 등록 기능은 비활성화됩니다. 로컬에만 저장되는 가짜 댓글을 게시 완료로 표시하지 않습니다.
+Firebase를 아직 연결하지 않아도 읽기는 동작합니다. 연결 전에는 댓글 영역과 댓글 버튼을 표시하지 않습니다. 추후 Firebase를 연결하면 가족은 이름과 내용만 적어 댓글과 답글을 남길 수 있습니다.
 
 빌드 결과를 확인하려면 다음 명령을 실행합니다.
 
@@ -55,9 +57,9 @@ date: 1977-04-01
 
 `site/read/`와 `site/.vitepress/generated/`는 생성 결과입니다. 직접 편집하거나 커밋하지 마세요. 연대별 원본의 `## 1930년대 …`부터 `## 2020년대 …`까지 제목 구조는 유지해야 합니다. 본문과 소제목은 자유롭게 수정할 수 있습니다.
 
-## Firebase 댓글 연결 · 최초 한 번
+## Firebase 댓글 연결 · 추후 설정
 
-운영자가 [Firebase 콘솔](https://console.firebase.google.com/)에서 설정합니다. 가족에게는 아래 절차나 Firebase 계정이 필요하지 않습니다. 내부적으로 댓글을 등록할 때 익명 인증이 자동 처리됩니다. [익명 인증 공식 안내](https://firebase.google.com/docs/auth/web/anonymous-auth)
+현재는 Firebase를 연결하지 않고 읽기 사이트를 운영합니다. 댓글을 사용하기로 할 때 운영자가 [Firebase 콘솔](https://console.firebase.google.com/)에서 아래 절차를 한 번 진행하면 됩니다. 가족에게는 이 절차나 Firebase 계정이 필요하지 않습니다. 내부적으로 댓글을 등록할 때 익명 인증이 자동 처리됩니다. [익명 인증 공식 안내](https://firebase.google.com/docs/auth/web/anonymous-auth)
 
 1. Firebase 프로젝트를 만들고 무료 **Spark** 요금제를 사용합니다. 이 구성에는 결제 계정 연결, Cloud Functions, Firebase Hosting이 필요하지 않습니다.
 2. **Authentication → Sign-in method**에서 **Anonymous(익명)**를 활성화합니다.
@@ -92,18 +94,18 @@ npx firebase deploy --only firestore:rules,firestore:indexes --project YOUR_PROJ
 
 무료 구성에서는 공개 GitHub 저장소를 사용합니다.
 
-1. **저장소 Settings → Secrets and variables → Actions → Variables**에서 위 표의 네 `VITE_FIREBASE_…` 변수를 추가하고 Firebase 웹 앱 설정값을 넣습니다. Repository variables를 사용하며, 관리자 비밀키는 필요하지 않습니다.
+1. Firebase 연결 전에는 환경변수 없이 배포합니다. 댓글을 연결할 때 **저장소 Settings → Secrets and variables → Actions → Variables**에서 위 표의 네 `VITE_FIREBASE_…` 변수를 추가하고 Firebase 웹 앱 설정값을 넣습니다. Repository variables를 사용하며, 관리자 비밀키는 필요하지 않습니다.
 2. **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 선택합니다.
 3. 이 프로젝트 파일을 `main` 브랜치에 푸시합니다. **Actions → Pages**에서 빌드와 배포 성공을 확인합니다.
 4. 배포된 `https://<GitHub 계정>.github.io/<저장소명>/` 주소를 가족에게 공유합니다.
 
 워크플로가 저장소 이름으로 `SITE_BASE=/<저장소명>/`를 자동 지정합니다. `<계정>.github.io` 저장소 자체나 개인 도메인의 루트에 배포한다면 `.github/workflows/deploy.yml`의 `SITE_BASE`를 `/`로 바꾸세요. [VitePress의 Pages 배포 안내](https://vitepress.dev/guide/deploy#github-pages)
 
-PR에서는 콘텐츠 테스트·타입 검사·빌드만 실행하며 공개 사이트는 변경하지 않습니다. `main` 푸시 시 검증을 통과한 빌드가 자동 배포됩니다. Firebase 설정값을 나중에 추가하거나 변경했다면 **Actions → Pages → Run workflow → main**으로 다시 빌드·배포해야 합니다. Firebase 값 없이 배포된 사이트는 읽기를 제공하고 댓글은 준비 중으로 표시합니다.
+PR에서는 콘텐츠 테스트·타입 검사·빌드만 실행하며 공개 사이트는 변경하지 않습니다. `main` 푸시 시 검증을 통과한 빌드가 자동 배포됩니다. Firebase 설정값을 나중에 추가하거나 변경했다면 **Actions → Pages → Run workflow → main**으로 다시 빌드·배포해야 합니다. Firebase 값 없이 배포된 사이트는 읽기를 제공하며 댓글 영역과 댓글 버튼은 숨깁니다.
 
 ## 댓글 운영과 무료 범위
 
-이 사이트의 **본문과 댓글은 공개**입니다. 가족 초대나 신원 확인 기능은 없으며, 이름은 작성자가 적은 표시명입니다. 가족은 이메일, 비밀번호, 인증번호를 입력하지 않습니다. 같은 브라우저에서는 작성한 이름과 글자 크기, 읽던 위치를 기억합니다.
+이 사이트의 **본문은 공개**이며, Firebase 연결 후 사용하는 댓글도 공개됩니다. 가족 초대나 신원 확인 기능은 없으며, 이름은 작성자가 적은 표시명입니다. 가족은 이메일, 비밀번호, 인증번호를 입력하지 않습니다. 같은 브라우저에서는 작성한 이름과 글자 크기, 읽던 위치를 기억합니다.
 
 댓글은 `pages/{문서 ID}/comments/{댓글 ID}`에 저장됩니다. 이름은 24자, 내용은 2,000자 이내이고 한 익명 사용자당 등록 간격은 최소 15초입니다. 규칙이 본문 길이, 작성 시각, 답글의 원댓글, 연속 등록 간격을 검사합니다. 새 브라우저로 다시 접속하는 행위까지 막는 가족 전용 인증이나 완전한 스팸 방지 기능은 아닙니다.
 

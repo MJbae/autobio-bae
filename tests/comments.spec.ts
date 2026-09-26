@@ -10,16 +10,13 @@ async function openComments(page: Page, decade = '1930') {
   await page.goto(`/read/${decade}s.html#comments`)
   await page.locator('#comments').scrollIntoViewIfNeeded()
   await expect(page.locator('.comment-composer')).toBeVisible()
-  await expect(page.locator('.loading-card')).toHaveCount(0)
+  await expect(page.locator('.comments-status')).toHaveCount(0)
 }
 
 async function showComments(page: Page) {
-  await page
-    .getByRole('navigation', { name: '읽기 도구' })
-    .getByRole('button', { name: '댓글 남기기', exact: true })
-    .click()
+  await page.locator('#comments').scrollIntoViewIfNeeded()
   await expect(page.locator('.comment-composer')).toBeVisible()
-  await expect(page.locator('.loading-card')).toHaveCount(0)
+  await expect(page.locator('.comments-status')).toHaveCount(0)
 }
 
 async function storedComments(request: APIRequestContext, pageId = 'life-1930s') {
@@ -53,7 +50,7 @@ test('a mobile visitor posts without signing in; another browser reads the store
 }) => {
   const original = '독정리로 이사하던 날 비가 많이 왔어요.\n이삿짐을 함께 옮겼던 기억이 나요.'
   await openComments(page)
-  await expect(page.getByText('아직 나눈 이야기가 없어요.', { exact: true })).toBeVisible()
+  await expect(page.locator('.comment-item')).toHaveCount(0)
   await page.getByLabel(/^이름/).fill('큰딸')
   await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(original)
   await page
@@ -99,7 +96,7 @@ test('a mobile visitor posts without signing in; another browser reads the store
     await expect(reply.locator('.comment-body')).toHaveText(
       '맞아요. 저도 우산을 들고 마중 나갔어요.'
     )
-    await expect(reply.locator('.parent-context')).toContainText('큰딸 님의 이야기에')
+    await expect(reply.locator('.parent-context')).toContainText('큰딸 님에게 답글')
     await expect(reply.getByRole('button', { name: /답글 쓰기/ })).toHaveCount(0)
 
     const saved = await storedComments(request)
@@ -182,7 +179,7 @@ test('empty fields are explained and HTML in a posted name or comment is display
     .getByRole('button', { name: '댓글 남기기', exact: true })
     .click()
   await expect(page.locator('.comment-body')).toHaveText(untrustedBody)
-  await expect(page.locator('.author-details strong')).toHaveText(untrustedName)
+  await expect(page.locator('.comment-meta strong')).toHaveText(untrustedName)
   await expect(
     page.locator('.comment-list img, .comment-list script, .comment-list b')
   ).toHaveCount(0)

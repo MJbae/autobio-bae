@@ -362,7 +362,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
     })
   )
   const catalog = {
-    title: '배병희의 기록',
+    title: '아버지의 이야기',
     introduction: plainText(main.body.slice(0, sections[0].start).replace(/^# [^\r\n]+\r?\n/, '')),
     chapters,
     documents,

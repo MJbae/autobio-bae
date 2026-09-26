@@ -300,291 +300,213 @@ defineExpose({ focusComposer })
 </script>
 
 <template>
-  <section class="family-comments" aria-labelledby="comments-heading" tabindex="-1">
-    <header class="comments-heading">
-      <span class="eyebrow">함께 쓰는 이야기</span>
-      <h2 id="comments-heading">기억을 보태 주세요</h2>
-      <p>
-        다르게 기억하는 일, 함께 떠오른 이야기를 들려주세요.<br class="desktop-break" />
-        짧은 안부도 좋아요.
-      </p>
-    </header>
+  <section
+    v-if="ready && configured"
+    class="family-comments"
+    aria-labelledby="comments-heading"
+    tabindex="-1"
+  >
+    <h2 id="comments-heading">의견</h2>
 
-    <div v-if="!ready" class="state-card" role="status">댓글을 준비하고 있어요.</div>
-    <div v-else-if="!configured" class="state-card" role="status">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
-        <path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 0 1 18 0Z" />
-        <path d="M7 11h10M7 15h6" />
-      </svg>
-      <p>댓글을 준비하고 있어요.<br />조금 뒤에 다시 찾아주세요.</p>
-    </div>
-
-    <template v-else>
-      <form
-        ref="composer"
-        class="comment-composer"
-        novalidate
-        :aria-label="`${pageTitle}에 댓글 남기기`"
-        @submit.prevent="submit"
-      >
-        <div v-if="replyTo" class="reply-context">
-          <div>
-            <span class="reply-caption">{{ replyTo.author }} 님에게 답글</span>
-            <p>{{ excerpt(replyTo.body) }}</p>
-          </div>
-          <button
-            type="button"
-            class="text-button cancel-reply"
-            :disabled="submitting"
-            @click="cancelReply"
-          >
-            취소
-          </button>
+    <form
+      ref="composer"
+      class="comment-composer"
+      novalidate
+      :aria-label="`${pageTitle}에 댓글 남기기`"
+      @submit.prevent="submit"
+    >
+      <div v-if="replyTo" class="reply-context">
+        <div>
+          <span class="reply-caption">{{ replyTo.author }} 님에게 답글</span>
+          <p>{{ excerpt(replyTo.body) }}</p>
         </div>
-
-        <div class="field name-field">
-          <label for="comment-author"
-            >이름 <span class="field-hint">가족이 알아볼 수 있게</span></label
-          >
-          <input
-            id="comment-author"
-            ref="authorInput"
-            v-model="author"
-            name="author"
-            type="text"
-            placeholder="예: 큰딸, 민수"
-            autocomplete="nickname"
-            maxlength="24"
-            required
-            :disabled="submitting"
-            :aria-invalid="Boolean(authorError)"
-            :aria-describedby="authorError ? 'comment-author-error' : undefined"
-          />
-          <p v-if="authorError" id="comment-author-error" class="field-error" role="alert">
-            {{ authorError }}
-          </p>
-        </div>
-
-        <div class="field">
-          <label for="comment-body">{{ replyTo ? '답글' : '남기고 싶은 이야기' }}</label>
-          <textarea
-            id="comment-body"
-            ref="bodyInput"
-            v-model="body"
-            name="comment"
-            :placeholder="
-              replyTo
-                ? '이 기억에 함께 보태고 싶은 이야기를 적어 주세요.'
-                : '“그날은 비가 많이 왔던 기억이 나요.”\n함께 간직하고 싶은 이야기를 적어 주세요.'
-            "
-            maxlength="2000"
-            rows="4"
-            required
-            :disabled="submitting"
-            :aria-invalid="Boolean(bodyError)"
-            :aria-describedby="
-              bodyError ? 'comment-body-error comment-public-note' : 'comment-public-note'
-            "
-          />
-          <div class="field-bottom">
-            <span class="draft-note">이름과 작성 중인 글은 이 기기에 기억해 둬요.</span>
-            <span class="character-count" :class="{ 'near-limit': body.length > 1900 }"
-              >{{ body.length.toLocaleString('ko-KR') }} / 2,000</span
-            >
-          </div>
-          <p v-if="bodyError" id="comment-body-error" class="field-error" role="alert">
-            {{ bodyError }}
-          </p>
-        </div>
-
-        <p id="comment-public-note" class="public-note">
-          이름과 댓글은 이 글을 읽는 분들에게 공개돼요.
-        </p>
-        <p v-if="submitError" class="message error-message" role="alert">{{ submitError }}</p>
-        <p class="announcement" aria-live="polite" aria-atomic="true">{{ announcement }}</p>
-        <div class="submit-row">
-          <p v-if="cooldownSeconds" class="cooldown-note">
-            다음 이야기는 {{ cooldownSeconds }}초 뒤에 남길 수 있어요.
-          </p>
-          <button
-            class="submit-button"
-            type="submit"
-            :disabled="submitting || cooldownSeconds > 0"
-            :aria-busy="submitting"
-          >
-            <span v-if="submitting" class="spinner" aria-hidden="true" />
-            {{ submitting ? '남기는 중…' : replyTo ? '답글 남기기' : '댓글 남기기' }}
-            <svg v-if="!submitting" aria-hidden="true" viewBox="0 0 20 20" fill="none">
-              <path d="M4 10h12M11 5l5 5-5 5" />
-            </svg>
-          </button>
-        </div>
-      </form>
-
-      <div class="conversation-heading">
-        <h3>나눈 이야기</h3>
-        <span v-if="comments.length">최근 이야기부터</span>
-      </div>
-
-      <div v-if="loading" class="state-card loading-card" role="status">
-        <span class="spinner" aria-hidden="true" />이야기를 불러오고 있어요.
-      </div>
-      <div v-else-if="!comments.length && !loadError" class="state-card empty-state">
-        <span class="empty-mark" aria-hidden="true">“</span>
-        <p>아직 나눈 이야기가 없어요.</p>
-        <span>첫 번째 기억을 들려주세요.</span>
-      </div>
-
-      <ol v-if="comments.length" class="comment-list" aria-label="댓글 목록">
-        <li
-          v-for="comment in comments"
-          :id="`comment-${comment.id}`"
-          :key="comment.id"
-          class="comment-item"
-        >
-          <article :aria-label="`${comment.author} 님의 ${comment.parentId ? '답글' : '댓글'}`">
-            <div class="comment-meta">
-              <span class="author-avatar" aria-hidden="true">{{
-                [...comment.author][0] || '가'
-              }}</span>
-              <div class="author-details">
-                <strong>{{ comment.author }}</strong
-                ><time :datetime="dateTime(comment.createdAt)">{{
-                  dateLabel(comment.createdAt)
-                }}</time>
-              </div>
-            </div>
-            <div v-if="comment.parentId" class="parent-context">
-              <template v-if="commentById.has(comment.parentId)"
-                ><span>{{ commentById.get(comment.parentId)?.author }} 님의 이야기에</span>
-                <p>{{ excerpt(commentById.get(comment.parentId)?.body || '') }}</p></template
-              >
-              <span v-else>앞서 남긴 댓글에 보탠 답글</span>
-            </div>
-            <p class="comment-body">{{ comment.body }}</p>
-            <button
-              v-if="!comment.parentId"
-              class="text-button reply-button"
-              type="button"
-              :disabled="submitting"
-              :aria-label="`${comment.author} 님에게 답글 쓰기`"
-              @click="startReply(comment)"
-            >
-              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
-                <path d="m7 4-4 4 4 4M3 8h7a6 6 0 0 1 6 6v2" /></svg
-              >답글 쓰기
-            </button>
-          </article>
-        </li>
-      </ol>
-
-      <div v-if="loadError" class="load-error" role="alert">
-        <p>{{ loadError }}</p>
         <button
           type="button"
-          class="text-button retry-button"
-          :disabled="loading || loadingMore"
-          @click="loadComments(comments.length > 0)"
+          class="text-button cancel-reply"
+          :disabled="submitting"
+          @click="cancelReply"
         >
-          다시 불러오기
+          취소
         </button>
       </div>
-      <button
-        v-else-if="hasMore && !loading"
-        class="load-more"
-        type="button"
-        :disabled="loadingMore"
-        :aria-busy="loadingMore"
-        @click="loadComments(true)"
+
+      <div class="field name-field">
+        <label for="comment-author">이름</label>
+        <input
+          id="comment-author"
+          ref="authorInput"
+          v-model="author"
+          name="author"
+          type="text"
+          placeholder="가족이 알아볼 수 있는 이름"
+          autocomplete="nickname"
+          maxlength="24"
+          required
+          :disabled="submitting"
+          :aria-invalid="Boolean(authorError)"
+          :aria-describedby="authorError ? 'comment-author-error' : undefined"
+        />
+        <p v-if="authorError" id="comment-author-error" class="field-error" role="alert">
+          {{ authorError }}
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="comment-body">{{ replyTo ? '답글' : '남기고 싶은 이야기' }}</label>
+        <textarea
+          id="comment-body"
+          ref="bodyInput"
+          v-model="body"
+          name="comment"
+          placeholder="기억나는 일이나 의견을 적어 주세요."
+          maxlength="2000"
+          rows="4"
+          required
+          :disabled="submitting"
+          :aria-invalid="Boolean(bodyError)"
+          :aria-describedby="
+            bodyError ? 'comment-body-error comment-public-note' : 'comment-public-note'
+          "
+        />
+        <p v-if="body.length >= 1800" class="character-count">
+          {{ body.length.toLocaleString('ko-KR') }} / 2,000
+        </p>
+        <p v-if="bodyError" id="comment-body-error" class="field-error" role="alert">
+          {{ bodyError }}
+        </p>
+      </div>
+
+      <p id="comment-public-note" class="public-note">이름과 댓글은 공개됩니다.</p>
+      <p v-if="submitError" class="error-message" role="alert">{{ submitError }}</p>
+      <p
+        class="announcement"
+        :class="{ 'sr-only': !announcement.startsWith('댓글을 남겼어요.') }"
+        aria-live="polite"
+        aria-atomic="true"
       >
-        <span v-if="loadingMore" class="spinner" aria-hidden="true" />{{
-          loadingMore ? '불러오는 중…' : '이전 이야기 더 보기'
-        }}
+        {{ announcement }}
+      </p>
+      <div class="submit-row">
+        <button
+          class="submit-button"
+          type="submit"
+          :disabled="submitting || cooldownSeconds > 0"
+          :aria-busy="submitting"
+        >
+          {{ submitting ? '남기는 중…' : replyTo ? '답글 남기기' : '댓글 남기기' }}
+        </button>
+        <p v-if="cooldownSeconds" class="cooldown-note">
+          {{ cooldownSeconds }}초 뒤에 다시 남길 수 있어요.
+        </p>
+      </div>
+    </form>
+
+    <p v-if="loading" class="comments-status" role="status">댓글을 불러오고 있어요.</p>
+
+    <ol v-if="comments.length" class="comment-list" aria-label="댓글 목록">
+      <li
+        v-for="comment in comments"
+        :id="`comment-${comment.id}`"
+        :key="comment.id"
+        class="comment-item"
+      >
+        <article :aria-label="`${comment.author} 님의 ${comment.parentId ? '답글' : '댓글'}`">
+          <div class="comment-meta">
+            <strong>{{ comment.author }}</strong>
+            <time :datetime="dateTime(comment.createdAt)">{{ dateLabel(comment.createdAt) }}</time>
+          </div>
+          <div v-if="comment.parentId" class="parent-context">
+            <template v-if="commentById.has(comment.parentId)">
+              <span>{{ commentById.get(comment.parentId)?.author }} 님에게 답글</span>
+              <p>{{ excerpt(commentById.get(comment.parentId)?.body || '') }}</p>
+            </template>
+            <span v-else>앞서 남긴 댓글에 대한 답글</span>
+          </div>
+          <p class="comment-body">{{ comment.body }}</p>
+          <button
+            v-if="!comment.parentId"
+            class="text-button reply-button"
+            type="button"
+            :disabled="submitting"
+            :aria-label="`${comment.author} 님에게 답글 쓰기`"
+            @click="startReply(comment)"
+          >
+            답글 쓰기
+          </button>
+        </article>
+      </li>
+    </ol>
+
+    <div v-if="loadError" class="load-error" role="alert">
+      <p>{{ loadError }}</p>
+      <button
+        type="button"
+        class="text-button retry-button"
+        :disabled="loading || loadingMore"
+        @click="loadComments(comments.length > 0)"
+      >
+        다시 불러오기
       </button>
-    </template>
+    </div>
+    <button
+      v-else-if="hasMore && !loading"
+      class="text-button load-more"
+      type="button"
+      :disabled="loadingMore"
+      :aria-busy="loadingMore"
+      @click="loadComments(true)"
+    >
+      {{ loadingMore ? '불러오는 중…' : '이전 이야기 더 보기' }}
+    </button>
   </section>
 </template>
 
 <style scoped>
 .family-comments {
-  --comment-ink: #264f40;
-  --comment-muted: #6a7069;
-  --comment-line: #dedfd4;
-  --comment-clay: #9b543c;
-  margin: 64px 0 32px;
-  padding-top: 40px;
+  --comment-ink: #1d1d1f;
+  --comment-muted: #6e6e73;
+  --comment-line: #d2d2d7;
+  --comment-action: #0066cc;
+  margin: 0;
+  padding-top: 32px;
   border-top: 1px solid var(--comment-line);
-  scroll-margin-top: 100px;
-  color: #283b31;
+  scroll-margin-top: 80px;
+  color: var(--comment-ink);
   outline: none;
 }
-.comments-heading {
-  margin-bottom: 26px;
-}
-.eyebrow {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: var(--comment-clay);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-.comments-heading h2 {
-  margin: 0 0 12px;
+.family-comments > h2 {
+  margin: 0 0 28px;
   padding: 0;
   border: 0;
   color: var(--comment-ink);
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.4;
-  font-weight: 700;
-  letter-spacing: -0.045em;
-}
-.comments-heading p {
-  margin: 0;
-  color: var(--comment-muted);
-  font-size: 16px;
-  line-height: 1.8;
-  word-break: keep-all;
-}
-.comment-composer {
-  padding: 24px;
-  border: 1px solid var(--comment-line);
-  border-radius: 18px;
-  background: #faf9f3;
+  font-weight: 600;
+  letter-spacing: -0.03em;
 }
 .field + .field {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 .field label {
   display: block;
   margin-bottom: 8px;
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 1.5;
-}
-.field-hint {
-  margin-left: 8px;
-  color: var(--comment-muted);
-  font-size: 13px;
-  font-weight: 400;
 }
 .field input,
 .field textarea {
   display: block;
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid #cbcec2;
-  border-radius: 10px;
-  color: #283b31;
-  background: #fffefa;
-  font-family: inherit;
+  padding: 12px;
+  border: 1px solid #86868b;
+  border-radius: 8px;
+  color: var(--comment-ink);
+  background: #fff;
+  font: inherit;
   font-size: 18px;
-  font-weight: 400;
-  line-height: 1.65;
+  line-height: 1.6;
   box-sizing: border-box;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
 }
 .field input {
   min-height: 52px;
@@ -601,128 +523,112 @@ defineExpose({ focusComposer })
 }
 .field input:focus,
 .field textarea:focus {
-  outline: 2px solid var(--comment-ink);
+  outline: 2px solid var(--comment-action);
   outline-offset: 2px;
-  border-color: var(--comment-ink);
 }
 .field input[aria-invalid='true'],
 .field textarea[aria-invalid='true'] {
-  border-color: #a64032;
+  border-color: #b42318;
 }
 .field input:disabled,
 .field textarea:disabled {
-  opacity: 0.65;
-}
-.field-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 7px;
-  color: var(--comment-muted);
-  font-size: 12px;
-  line-height: 1.6;
+  opacity: 0.6;
 }
 .character-count {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-}
-.near-limit {
-  color: var(--comment-clay);
-}
-.field-error,
-.error-message {
   margin: 8px 0 0;
-  color: #943629;
-  font-size: 14px;
-  line-height: 1.7;
-}
-.public-note {
-  margin: 20px 0 0;
   color: var(--comment-muted);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.field-error,
+.error-message,
+.load-error {
+  margin: 8px 0 0;
+  color: #b42318;
+  font-size: 15px;
   line-height: 1.7;
+}
+.public-note,
+.cooldown-note {
+  margin: 12px 0 0;
+  color: var(--comment-muted);
+  font-size: 14px;
+  line-height: 1.6;
   word-break: keep-all;
 }
 .announcement {
-  margin: 10px 0 0;
-  color: var(--comment-ink);
-  font-size: 14px;
+  margin: 12px 0 0;
+  font-size: 15px;
   line-height: 1.7;
 }
-.announcement:empty {
-  margin: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .submit-row {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 18px;
+  gap: 8px 16px;
+  margin-top: 20px;
 }
 .submit-button {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
-  min-height: 50px;
-  padding: 12px 22px;
-  border: 1px solid var(--comment-ink);
-  border-radius: 10px;
-  color: #fffdf5;
-  background: var(--comment-ink);
+  min-height: 48px;
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--comment-action);
   font: inherit;
-  font-size: 16px;
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 500;
   line-height: 1.5;
   cursor: pointer;
 }
-.submit-button svg {
-  width: 20px;
-  height: 20px;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 .submit-button:hover:not(:disabled) {
-  background: #1b3d30;
+  background: #005bb5;
 }
 button:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: default;
 }
 button:focus-visible {
-  outline: 2px solid var(--comment-clay);
-  outline-offset: 4px;
+  outline: 2px solid var(--comment-action);
+  outline-offset: 3px;
 }
 .cooldown-note {
-  flex: 1;
   margin: 0;
-  color: var(--comment-muted);
-  font-size: 12px;
-  line-height: 1.6;
 }
 .reply-context {
   display: flex;
   gap: 12px;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
-  padding: 12px 0 12px 14px;
-  border-left: 3px solid #b77c5d;
+  margin-bottom: 24px;
+  padding-left: 12px;
+  border-left: 2px solid var(--comment-line);
 }
 .reply-context > div {
   min-width: 0;
 }
 .reply-caption {
-  color: var(--comment-clay);
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 15px;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
-.reply-context p {
+.reply-context p,
+.parent-context {
   margin: 4px 0 0;
   color: var(--comment-muted);
   font-size: 14px;
@@ -733,286 +639,112 @@ button:focus-visible {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  gap: 6px;
+  min-width: 44px;
   min-height: 44px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 7px;
   background: transparent;
-  color: var(--comment-ink);
+  color: var(--comment-action);
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
   line-height: 1.6;
   cursor: pointer;
   text-decoration: none;
 }
 .text-button:hover:not(:disabled) {
-  background: #edf0e6;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .cancel-reply {
   flex: 0 0 auto;
   margin-top: -8px;
 }
-.conversation-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin: 34px 0 8px;
-}
-.conversation-heading h3 {
-  margin: 0;
-  color: var(--comment-ink);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-.conversation-heading > span {
-  color: var(--comment-muted);
-  font-size: 12px;
-}
-.state-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 20px;
-  border-radius: 14px;
-  background: #f3f3eb;
+.comments-status {
+  margin: 32px 0 0;
   color: var(--comment-muted);
   font-size: 15px;
-  line-height: 1.8;
-  text-align: center;
-}
-.state-card p {
-  margin: 0;
-}
-.state-card > svg {
-  width: 30px;
-  height: 30px;
-  stroke: #839781;
-  stroke-width: 1.3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.loading-card {
-  flex-direction: row;
-}
-.empty-state {
-  gap: 4px;
-  background: transparent;
-}
-.empty-state > span:last-child {
-  font-size: 14px;
-}
-.empty-mark {
-  height: 34px;
-  color: #a3af99;
-  font:
-    54px/1 Georgia,
-    serif;
+  line-height: 1.7;
 }
 .comment-list {
-  margin: 0;
+  margin: 32px 0 0;
   padding: 0;
   list-style: none;
 }
 .comment-item {
   margin: 0;
-  padding: 24px 0 15px;
-  border-bottom: 1px solid #e5e5dc;
-  scroll-margin-top: 100px;
+  padding: 24px 0 16px;
+  border-top: 1px solid var(--comment-line);
+  scroll-margin-top: 80px;
 }
 .comment-meta {
   display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.author-avatar {
-  display: flex;
-  flex-shrink: 0;
-  justify-content: center;
-  align-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: #e9edde;
-  color: #526649;
-  font-size: 14px;
-  font-weight: 600;
-}
-.author-details {
-  display: flex;
-  flex: 1;
   align-items: baseline;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 4px 12px;
-  min-width: 0;
 }
-.author-details strong {
-  color: #283b31;
-  font-size: 15px;
-  font-weight: 650;
+.comment-meta strong {
+  color: var(--comment-ink);
+  font-size: 16px;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
-.author-details time {
+.comment-meta time {
   color: var(--comment-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .comment-body {
-  margin: 14px 0 0;
-  color: #354438;
-  font-size: 17px;
-  line-height: 1.85;
+  margin: 12px 0 0;
+  color: var(--comment-ink);
+  font-size: 18px;
+  line-height: 1.8;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .reply-button {
-  margin: 6px 0 0 -10px;
-  color: #5e705b;
-}
-.reply-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  margin: 4px 0 0 -10px;
 }
 .parent-context {
   margin-top: 14px;
-  padding: 8px 12px;
-  border-left: 2px solid #c5cbbb;
-  background: #f4f5ee;
-  color: var(--comment-muted);
-  font-size: 12px;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
+  padding-left: 12px;
+  border-left: 2px solid var(--comment-line);
 }
 .parent-context p {
   margin: 2px 0 0;
-  font-size: 13px;
 }
 .load-more {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
   width: 100%;
-  min-height: 50px;
-  margin-top: 20px;
-  padding: 12px;
-  border: 1px solid var(--comment-line);
-  border-radius: 10px;
-  background: #faf9f3;
-  color: var(--comment-ink);
-  font: inherit;
-  font-size: 15px;
-  cursor: pointer;
-}
-.load-more:hover:not(:disabled) {
-  background: #edf0e6;
+  margin-top: 16px;
 }
 .load-error {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 10px;
-  background: #f8ede5;
-  color: #85452f;
-  font-size: 14px;
-  line-height: 1.7;
+  margin-top: 24px;
 }
 .load-error p {
   margin: 0;
 }
 .retry-button {
   margin-left: -10px;
-  color: #85452f;
-}
-.spinner {
-  display: inline-block;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: comment-spin 0.75s linear infinite;
-}
-@keyframes comment-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 @media (max-width: 600px) {
-  .family-comments {
-    margin-top: 44px;
-    padding-top: 30px;
-  }
-  .comments-heading h2 {
-    font-size: 26px;
-  }
-  .comments-heading p {
-    font-size: 15px;
-  }
-  .desktop-break {
-    display: none;
-  }
-  .comment-composer {
-    padding: 18px 16px;
-    border-radius: 14px;
-  }
   .field input {
     max-width: none;
-  }
-  .field-hint {
-    font-size: 12px;
-  }
-  .field-bottom {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .draft-note {
-    flex: 1 1 200px;
-  }
-  .character-count {
-    margin-left: auto;
   }
   .submit-row {
     flex-direction: column;
     align-items: stretch;
-    gap: 8px;
   }
   .submit-button {
     width: 100%;
-    min-height: 52px;
-    font-size: 17px;
+    min-height: 50px;
   }
   .cooldown-note {
     text-align: center;
   }
-  .author-details {
-    display: block;
-  }
-  .author-details time {
-    display: block;
-    margin-top: 2px;
-  }
-  .comment-body {
-    font-size: 17px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation-duration: 1.5s;
-  }
-  .field input,
-  .field textarea {
-    transition: none;
+  .comment-meta {
+    flex-direction: column;
+    gap: 2px;
   }
 }
 </style>

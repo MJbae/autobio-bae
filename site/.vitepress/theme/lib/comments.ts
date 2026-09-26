@@ -1,4 +1,6 @@
 import { getApps, initializeApp } from 'firebase/app'
+import { configuration, isCommentsConfigured } from './firebase-config'
+export { isCommentsConfigured } from './firebase-config'
 import { connectAuthEmulator, getAuth, signInAnonymously, type Auth } from 'firebase/auth'
 import {
   collection,
@@ -37,19 +39,9 @@ type CommentCursor = {
 const PAGE_SIZE = 30
 const COOLDOWN_MS = 15_000
 const VALID_ID = /^[A-Za-z0-9_-]{1,120}$/
-const configuration = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY?.trim(),
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN?.trim(),
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim(),
-  appId: import.meta.env.VITE_FIREBASE_APP_ID?.trim(),
-}
 
 let clients: { auth: Auth; db: Firestore } | undefined
 let signingIn: ReturnType<typeof signInAnonymously> | undefined
-
-export function isCommentsConfigured(): boolean {
-  return Object.values(configuration).every(Boolean)
-}
 
 function getClients() {
   if (typeof window === 'undefined') {

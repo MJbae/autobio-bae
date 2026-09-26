@@ -8,15 +8,15 @@ const base = process.env.SITE_BASE || env.SITE_BASE || '/autobio-bae/'
 
 export default defineConfig({
   lang: 'ko-KR',
-  title: '배병희의 기록',
-  titleTemplate: ':title · 가족의 서재',
-  description: '밭과 바다에서 시작된 한 사람의 삶. 가족의 기억으로 함께 이어 쓰는 이야기입니다.',
+  title: '아버지의 이야기',
+  titleTemplate: ':title · 아버지의 이야기',
+  description: '아버지께서 걸어오신 길을 함께 읽습니다.',
   base,
   lastUpdated: false,
   cleanUrls: false,
   appearance: false,
   head: [
-    ['meta', { name: 'theme-color', content: '#f7f5ef' }],
+    ['meta', { name: 'theme-color', content: '#ffffff' }],
     ['meta', { name: 'color-scheme', content: 'light' }],
     [
       'meta',
