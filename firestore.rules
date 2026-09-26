@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function anonymous() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function validId(value) {
+      return value is string && value.matches('[A-Za-z0-9_-]{1,120}');
+    }
+
+    function validComment(pageId, commentId) {
+      let data = request.resource.data;
+      return validId(pageId) && validId(commentId)
+        && data.keys().hasAll(['author', 'body', 'parentId', 'uid', 'createdAt'])
+        && data.keys().hasOnly(['author', 'body', 'parentId', 'uid', 'createdAt'])
+        && data.uid == request.auth.uid
+        && data.author is string && data.author.size() >= 1 && data.author.size() <= 24
+        && data.author.matches('[^\r\n]*\\S[^\r\n]*')
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 2000
+        && data.body.matches('[\\s\\S]*\\S[\\s\\S]*')
+        && data.createdAt == request.time
+        && (data.parentId == null
+          || (validId(data.parentId) && data.parentId != commentId
+            && exists(/databases/$(database)/documents/pages/$(pageId)/comments/$(data.parentId))
+            && get(/databases/$(database)/documents/pages/$(pageId)/comments/$(data.parentId)).data.parentId == null));
+    }
+
+    function pairedRateLimit(pageId, commentId) {
+      let rate = getAfter(/databases/$(database)/documents/rateLimits/$(request.auth.uid)).data;
+      return rate.lastCommentAt == request.time
+        && rate.lastCommentId == commentId
+        && rate.lastPageId == pageId;
+    }
+
+    match /pages/{pageId}/comments/{commentId} {
+      // The stories and their comments are public. Listing must be paginated.
+      allow get: if true;
+      allow list: if request.query.limit != null && request.query.limit <= 30;
+      allow create: if anonymous() && validComment(pageId, commentId)
+        && pairedRateLimit(pageId, commentId);
+      // Only the owner, through Firebase Console/Admin SDK, can moderate.
+      allow update, delete: if false;
+    }
+
+    function validRateLimit(uid) {
+      let data = request.resource.data;
+      let commentPath = /databases/$(database)/documents/pages/$(data.lastPageId)/comments/$(data.lastCommentId);
+      return data.keys().hasAll(['lastCommentAt', 'lastCommentId', 'lastPageId'])
+        && data.keys().hasOnly(['lastCommentAt', 'lastCommentId', 'lastPageId'])
+        && validId(data.lastPageId) && validId(data.lastCommentId)
+        && data.lastCommentAt == request.time
+        && !exists(commentPath)
+        && getAfter(commentPath).data.uid == uid
+        && getAfter(commentPath).data.createdAt == request.time;
+    }
+
+    match /rateLimits/{uid} {
+      allow get: if anonymous() && request.auth.uid == uid;
+      allow list, delete: if false;
+      allow create: if anonymous() && request.auth.uid == uid && validRateLimit(uid);
+      allow update: if anonymous() && request.auth.uid == uid && validRateLimit(uid)
+        && request.time >= resource.data.lastCommentAt + duration.value(15, 's');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
