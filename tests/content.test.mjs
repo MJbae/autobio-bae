@@ -227,18 +227,32 @@ test('임시글, 운영 문서, 프로젝트 내부와 심볼릭 링크의 Markd
   )
 })
 
-test('윤문제안서는 정확한 파일명으로만 게시에서 제외하며 원본은 보존한다', (t) => {
+test('편집 제안서는 루트와 content에서 정확한 파일명으로만 제외하며 원본을 보존한다', (t) => {
   const { root, write, run } = fixture(t)
   const editorial = '# 편집 참고\n\n제안 내용은 사이트에 게시하지 않습니다.\n'
-  write('윤문제안서.md', editorial)
+  const editorialNames = [
+    '윤문제안서.md',
+    '윤문제안서_최종.md',
+    '사랑을_주제로_한_일대기_구성_개선_제안서.md',
+  ]
+  const editorialPaths = editorialNames.flatMap((filename) => [
+    filename,
+    `content/편집/${filename}`,
+    `content/맥에서_추가/${filename.normalize('NFD')}`,
+  ])
+  for (const filename of editorialPaths) write(filename, editorial)
   write('content/윤문제안서_공개.md', '# 가족에게 공유할 제안')
+  write('사랑을_주제로_한_일대기.md', '# 사랑을 주제로 한 일대기')
+  write('content/가족_제안서.md', '# 가족의 제안')
   const { catalog, manifest } = run()
   assert.deepEqual(
-    catalog.documents.map(({ title }) => title),
-    ['가족에게 공유할 제안']
+    catalog.documents.map(({ title }) => title).sort(),
+    ['가족에게 공유할 제안', '사랑을 주제로 한 일대기', '가족의 제안'].sort()
   )
-  assert.ok(!manifest.sources.some(({ source }) => source === '윤문제안서.md'))
-  assert.equal(readFileSync(path.join(root, '윤문제안서.md'), 'utf8'), editorial)
+  for (const filename of editorialPaths) {
+    assert.ok(!manifest.sources.some(({ source }) => source === filename))
+    assert.equal(readFileSync(path.join(root, filename), 'utf8'), editorial)
+  }
 })
 
 test('중복 ID, 예약된 연대 ID와 충돌, 안전하지 않은 경로를 빌드 전에 거절한다', (t) => {

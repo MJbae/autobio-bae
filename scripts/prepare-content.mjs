@@ -19,7 +19,16 @@ import { parseDecadeHeading } from '../site/.vitepress/shared/decade-heading.mjs
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const mainFilename = '연대별_서사_소재_정리.md'
 const excludedRootFiles =
-  /^(?:readme(?:[._-].*)?|agents|setup(?:[._-].*)?|deployment|deploy|contributing|changelog|license|security|code_of_conduct|운영안내|설치안내|윤문제안서)\.md$/i
+  /^(?:readme(?:[._-].*)?|agents|setup(?:[._-].*)?|deployment|deploy|contributing|changelog|license|security|code_of_conduct|운영안내|설치안내)\.md$/i
+// Exact editorial filenames only: other family manuscripts may contain “제안서”.
+const excludedEditorialFiles = new Set([
+  '윤문제안서.md',
+  '윤문제안서_최종.md',
+  '사랑을_주제로_한_일대기_구성_개선_제안서.md',
+])
+const isExcludedMarkdown = (filename) =>
+  excludedRootFiles.test(filename) ||
+  excludedEditorialFiles.has(filename.normalize('NFC').toLowerCase())
 const validId = /^[a-z0-9][a-z0-9_-]{0,79}$/
 const assetExtensions = new Set([
   '.png',
@@ -117,7 +126,7 @@ function discover(root) {
         entry.isFile() &&
         !entry.name.startsWith('.') &&
         /\.md$/i.test(entry.name) &&
-        !excludedRootFiles.test(entry.name)
+        !isExcludedMarkdown(entry.name)
     )
     .map((entry) => entry.name)
   const contentRoot = path.join(root, 'content')
@@ -127,7 +136,7 @@ function discover(root) {
         continue
       const filename = path.join(directory, entry.name)
       if (entry.isDirectory()) visit(filename)
-      else if (entry.isFile() && /\.md$/i.test(entry.name) && !excludedRootFiles.test(entry.name))
+      else if (entry.isFile() && /\.md$/i.test(entry.name) && !isExcludedMarkdown(entry.name))
         sources.push(slash(path.relative(root, filename)))
     }
   }

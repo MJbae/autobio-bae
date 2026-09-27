@@ -82,7 +82,8 @@ test('큰 글씨와 읽던 위치를 기억한다', async ({ page }) => {
   await expectNoHorizontalOverflow(page)
 
   await expect(page.getByRole('button', { name: '목차', exact: true })).toHaveCount(0)
-  await page.locator('.story-content h3').nth(1).scrollIntoViewIfNeeded()
+  const sections = page.locator('.story-content h3')
+  await sections.nth(Math.floor((await sections.count()) / 2)).scrollIntoViewIfNeeded()
   await expect
     .poll(async () =>
       page.evaluate(
