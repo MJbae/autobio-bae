@@ -14,12 +14,12 @@ import {
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import matter from 'gray-matter'
+import { parseDecadeHeading } from '../site/.vitepress/shared/decade-heading.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const mainFilename = '연대별_서사_소재_정리.md'
-const expectedDecades = Array.from({ length: 10 }, (_, index) => String(1930 + index * 10))
 const excludedRootFiles =
-  /^(?:readme(?:[._-].*)?|agents|setup(?:[._-].*)?|deployment|deploy|contributing|changelog|license|security|code_of_conduct|운영안내|설치안내)\.md$/i
+  /^(?:readme(?:[._-].*)?|agents|setup(?:[._-].*)?|deployment|deploy|contributing|changelog|license|security|code_of_conduct|운영안내|설치안내|윤문제안서)\.md$/i
 const validId = /^[a-z0-9][a-z0-9_-]{0,79}$/
 const assetExtensions = new Set([
   '.png',
@@ -181,12 +181,18 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
 
   const main = loaded.find(({ source }) => source === mainFilename)
   const sections = headings(main.body)
-  const chapterSections = sections.filter(({ title }) => /^\d{4}년대(?:\s|$)/.test(title))
-  const foundDecades = chapterSections.map(({ title }) => title.slice(0, 4))
-  if (JSON.stringify(foundDecades) !== JSON.stringify(expectedDecades)) {
-    throw new Error(
-      `연대 제목은 1930년대부터 2020년대까지 순서대로 한 번씩 있어야 합니다. 발견: ${foundDecades.join(', ')}`
-    )
+  const chapterSections = sections.filter(({ title }) => /^\d{4}년대(?=$|[\s:：—–-])/u.test(title))
+  if (!chapterSections.length) {
+    throw new Error('연대 제목이 없습니다. 원본에 ## 1930년대 — 제목 같은 2단계 제목을 넣으세요.')
+  }
+  const foundDecades = new Set()
+  for (const section of chapterSections) {
+    const heading = parseDecadeHeading(section.title)
+    if (!heading)
+      throw new Error(`연대 제목의 연도는 네 자리의 10년 단위여야 합니다: ${section.title}`)
+    if (foundDecades.has(heading.year))
+      throw new Error(`연대 제목 중복: ${heading.label}. 각 연대는 한 번만 지정하세요.`)
+    foundDecades.add(heading.year)
   }
 
   const usedIds = new Map()
@@ -211,7 +217,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
   }
 
   const chapters = chapterSections.map((section) => {
-    const decade = section.title.slice(0, 4)
+    const { year: decade, label, subtitle } = parseDecadeHeading(section.title)
     const nextSection = sections[sections.indexOf(section) + 1]
     const body = `# ${section.title}\n${main.body.slice(section.bodyStart, nextSection?.start ?? main.body.length)}`
     const description = summary(
@@ -220,10 +226,10 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
     const chapter = {
       id: `life-${decade}s`,
       title: section.title,
-      subtitle: section.title.replace(/^\d{4}년대\s*[—–-]?\s*/, ''),
+      subtitle,
       description,
       url: `/read/${decade}s.html`,
-      decade: `${decade}년대`,
+      decade: label,
       minutes: readingMinutes(body),
     }
     register({ ...chapter, filename: `${decade}s.md`, body, kind: 'chapter', source: mainFilename })
@@ -345,7 +351,8 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
   const outputs = new Map(
     pages.map((page) => {
       const index = chapters.findIndex(({ id }) => id === page.id)
-      const neighbor = (chapter) => (chapter ? { title: chapter.title, url: chapter.url } : null)
+      const neighbor = (chapter) =>
+        chapter ? { title: chapter.title, decade: chapter.decade, url: chapter.url } : null
       const metadata = {
         title: page.title,
         description: page.description,

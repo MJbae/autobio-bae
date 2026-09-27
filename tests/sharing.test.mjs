@@ -7,6 +7,11 @@ const siteUrl = 'https://mjbae.github.io/autobio-bae/'
 const title = '아버지의 기록'
 const description = '자서전을 준비하며, 연대별 기억과 소재를 모읍니다.'
 const imageUrl = `${siteUrl}og-image.png`
+const manuscript = await readFile(new URL('../연대별_서사_소재_정리.md', import.meta.url), 'utf8')
+const chapterTitles = [...manuscript.matchAll(/^## ((\d{4})년대[^\n]*)$/gm)].map((match) => ({
+  title: match[1],
+  year: match[2],
+}))
 
 function decodeHtml(value) {
   const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' }
@@ -81,21 +86,23 @@ test('the home page provides its sharing title and description without JavaScrip
   assertPreviewImage(head)
 })
 
-test('a decade link has its own static sharing title and canonical URL', async () => {
-  const head = await staticHead('read/1930s.html')
-  const decadeTitle = head.meta('og:title')
-  assert.match(decadeTitle, /1930년대/)
-  assert.ok(decadeTitle.includes(title))
-  assert.ok(head.meta('og:description').includes(description))
-  assert.equal(head.meta('twitter:title'), decadeTitle)
-  assert.equal(head.meta('twitter:description'), head.meta('og:description'))
-  assert.equal(head.link('canonical').href, `${siteUrl}read/1930s.html`)
-  assert.equal(head.meta('og:url'), `${siteUrl}read/1930s.html`)
-  assertPreviewImage(head)
+test('each decade link uses its current manuscript title and stable canonical URL', async () => {
+  for (const chapter of chapterTitles) {
+    const head = await staticHead(`read/${chapter.year}s.html`)
+    const decadeTitle = head.meta('og:title')
+    assert.ok(decadeTitle.includes(chapter.title))
+    assert.ok(decadeTitle.includes(title))
+    assert.ok(head.meta('og:description').includes(description))
+    assert.equal(head.meta('twitter:title'), decadeTitle)
+    assert.equal(head.meta('twitter:description'), head.meta('og:description'))
+    assert.equal(head.link('canonical').href, `${siteUrl}read/${chapter.year}s.html`)
+    assert.equal(head.meta('og:url'), `${siteUrl}read/${chapter.year}s.html`)
+    assertPreviewImage(head)
+  }
 })
 
 test('home and decade pages expose browser and mobile icons from the deployed base path', async () => {
-  for (const page of ['index.html', 'read/1930s.html']) {
+  for (const page of ['index.html', `read/${chapterTitles[0].year}s.html`]) {
     const head = await staticHead(page)
     assert.equal(head.link('icon', '/autobio-bae/favicon.svg').type, 'image/svg+xml')
     const favicon = head.link('icon', '/autobio-bae/favicon-32.png')

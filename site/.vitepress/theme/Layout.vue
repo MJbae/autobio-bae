@@ -11,6 +11,7 @@ import {
 import { Content, useData, useRoute, withBase } from 'vitepress'
 import Icon from './components/Icon.vue'
 import { isCommentsConfigured } from './lib/firebase-config'
+import { parseDecadeHeading } from '../shared/decade-heading.mjs'
 import rawCatalog from '../generated/catalog.json'
 
 type Reading = { id: string; title: string; url: string }
@@ -30,9 +31,16 @@ const isHome = computed(() => frontmatter.value.layout === 'home')
 const isMissing = computed(() => Boolean(page.value.isNotFound))
 const pageId = computed(() => String(frontmatter.value.commentId || ''))
 const title = computed(() => String(frontmatter.value.title || page.value.title || '이야기'))
-const displayTitle = computed(() => title.value.replace(/^\d{4}년대\s*[—–-]\s*/, ''))
-const articleLabel = computed(
-  () => frontmatter.value.decade || (frontmatter.value.kind === 'full' ? '전체 이야기' : '')
+const decadeHeading = computed(() =>
+  frontmatter.value.kind === 'chapter' ? parseDecadeHeading(title.value) : null
+)
+const displayTitle = computed(() => decadeHeading.value?.subtitle || title.value)
+const articleLabel = computed(() =>
+  decadeHeading.value?.subtitle
+    ? decadeHeading.value.label
+    : frontmatter.value.kind === 'full'
+      ? '전체 이야기'
+      : ''
 )
 const showComments = computed(
   () => commentsEnabled && Boolean(pageId.value) && frontmatter.value.kind !== 'full'
@@ -167,7 +175,13 @@ onMounted(() => {
       const entry = [...catalog.chapters, ...catalog.documents, catalog.fullStory].find(
         (item) => item.id === saved.id
       )
-      if (entry) lastRead.value = { ...saved, url: withBase(entry.url) }
+      if (entry)
+        lastRead.value = {
+          ...saved,
+          title:
+            catalog.chapters.find((chapter) => chapter.id === entry.id)?.subtitle || entry.title,
+          url: withBase(entry.url),
+        }
     }
   } catch {
     /* optional */
@@ -217,7 +231,7 @@ onBeforeUnmount(() => {
         >
           <span class="chapter-copy"
             ><span class="chapter-decade">{{ chapter.decade }}</span
-            ><span class="chapter-title">{{ chapter.subtitle }}</span></span
+            ><span v-if="chapter.subtitle" class="chapter-title">{{ chapter.subtitle }}</span></span
           >
           <Icon name="chevron" :size="16" />
         </a>
@@ -292,12 +306,12 @@ onBeforeUnmount(() => {
         >
           <a v-if="frontmatter.prev" :href="withBase(frontmatter.prev.url)"
             ><span class="neighbor-label"><Icon name="back" :size="15" /> 이전 이야기</span
-            ><span>{{ frontmatter.prev.title.replace(/\s*[—–-].*$/, '') }}</span></a
+            ><span>{{ frontmatter.prev.decade || frontmatter.prev.title }}</span></a
           >
           <span v-else />
           <a v-if="frontmatter.next" class="next-chapter" :href="withBase(frontmatter.next.url)"
             ><span class="neighbor-label">다음 이야기 <Icon name="arrow" :size="15" /></span
-            ><span>{{ frontmatter.next.title.replace(/\s*[—–-].*$/, '') }}</span></a
+            ><span>{{ frontmatter.next.decade || frontmatter.next.title }}</span></a
           >
         </nav>
       </main>

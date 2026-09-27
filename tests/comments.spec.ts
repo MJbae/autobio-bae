@@ -1,4 +1,10 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+
+const manuscript = readFileSync(new URL('../연대별_서사_소재_정리.md', import.meta.url), 'utf8')
+const sourceDecades = [...manuscript.matchAll(/^## (\d{4})년대(?=$|[\s:：—–-])/gm)].map(
+  (match) => match[1]
+)
 
 const PROJECT = 'demo-family-library'
 const FIRESTORE = 'http://127.0.0.1:8080'
@@ -9,7 +15,9 @@ const commentsFor = (pageId: string) => `${documentsBase}/pages/${pageId}/commen
 async function openComments(page: Page, decade = '1930') {
   await page.goto(`/read/${decade}s.html#comments`)
   await page.locator('#comments').scrollIntoViewIfNeeded()
-  await expect(page.getByRole('heading', { name: `${decade}년대 기억 보태기`, exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: `${decade}년대 기억 보태기`, exact: true })
+  ).toBeVisible()
   await expect(page.locator('.comment-composer')).toBeVisible()
   await expect(page.locator('.comments-status')).toHaveCount(0)
 }
@@ -159,7 +167,9 @@ test('names survive reloads, drafts stay with their article, and posted comments
     .click()
   await expect(page).toHaveURL(/\/read\/1940s\.html$/)
   await showComments(page)
-  await expect(page.getByRole('heading', { name: '1940년대 기억 보태기', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '1940년대 기억 보태기', exact: true })
+  ).toBeVisible()
   await expect(page.getByLabel(/^이름/)).toHaveValue('큰아들')
   await expect(page.getByLabel('내용', { exact: true })).toHaveValue('')
   await page.getByLabel('내용', { exact: true }).fill(published)
@@ -208,7 +218,9 @@ test('names survive reloads, drafts stay with their article, and posted comments
 
     await page.reload()
     await showComments(page)
-    await expect(page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })
+    ).toBeVisible()
     await expect(page.locator('.comment-body')).toHaveText(earlierMemory)
     await expect(page.getByText(published, { exact: true })).toHaveCount(0)
     await expect(page.getByLabel('내용', { exact: true })).toHaveValue(draft)
@@ -234,8 +246,8 @@ test('the full story links each decade to its own comments and has no combined t
   await page.goto('/read/life-story.html')
   await expect(page.locator('#comments, .comment-composer')).toHaveCount(0)
   const decadeLinks = page.getByRole('link', { name: /^\d{4}년대 기억 보태기$/ })
-  await expect(decadeLinks).toHaveCount(10)
-  for (let decade = 1930; decade <= 2020; decade += 10) {
+  await expect(decadeLinks).toHaveCount(sourceDecades.length)
+  for (const decade of sourceDecades) {
     await expect(
       page.getByRole('link', { name: `${decade}년대 기억 보태기`, exact: true })
     ).toHaveAttribute('href', `/read/${decade}s.html#comments`)
@@ -245,7 +257,9 @@ test('the full story links each decade to its own comments and has no combined t
   await commentLink.click()
   await expect(page).toHaveURL(/\/read\/1930s\.html#comments$/)
   await showComments(page)
-  await expect(page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })
+  ).toBeVisible()
   const memory = '전체 이야기를 읽다가 중장리 기억을 남겨요.'
   await page.getByLabel(/^이름/).fill('큰딸')
   await page.getByLabel('내용', { exact: true }).fill(memory)
@@ -327,9 +341,7 @@ test('older comments load in bounded pages without duplicate entries', async ({
   await page.getByRole('button', { name: '댓글 더 보기', exact: true }).click()
   await expect(page.locator('.comment-item')).toHaveCount(31)
   await expect(page.locator('.comment-body').last()).toHaveText('기억 1')
-  await expect(page.getByRole('button', { name: '댓글 더 보기', exact: true })).toHaveCount(
-    0
-  )
+  await expect(page.getByRole('button', { name: '댓글 더 보기', exact: true })).toHaveCount(0)
   const ids = await page
     .locator('.comment-item')
     .evaluateAll((items) => items.map((item) => item.id))

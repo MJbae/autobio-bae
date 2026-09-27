@@ -13,11 +13,20 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import matter from 'gray-matter'
+import { createMarkdownRenderer } from 'vitepress'
 import { prepareContent, plainText } from '../scripts/prepare-content.mjs'
+import { parseDecadeHeading } from '../site/.vitepress/shared/decade-heading.mjs'
+import { decadeComments } from '../site/.vitepress/markdown/decade-comments.ts'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const mainFilename = '연대별_서사_소재_정리.md'
 const original = readFileSync(path.join(repo, mainFilename), 'utf8')
+const sourceHeadings = [...original.matchAll(/^## (.+)$/gm)].map((match) => ({
+  title: match[1],
+  start: match.index,
+  bodyStart: match.index + match[0].length + 1,
+}))
+const sourceChapters = sourceHeadings.filter(({ title }) => /^\d{4}년대/.test(title))
 const silent = { log() {}, warn() {} }
 
 function fixture(t) {
@@ -34,42 +43,139 @@ function fixture(t) {
   return { root, write, run, readPage }
 }
 
-test('원본을 수정하지 않고 열 개 연대와 전체글을 생성하며 모든 본문을 보존한다', (t) => {
+test('원본에 있는 연대와 전체글을 생성하며 제목과 모든 본문을 보존한다', (t) => {
   const { root, run, readPage } = fixture(t)
   const { catalog } = run()
   assert.equal(catalog.title, '아버지의 기록')
-  assert.equal(catalog.chapters.length, 10)
+  assert.equal(catalog.chapters.length, sourceChapters.length)
   assert.equal(catalog.documents.length, 0)
   assert.deepEqual(
     catalog.chapters.map(({ id }) => id),
-    Array.from({ length: 10 }, (_, i) => `life-${1930 + i * 10}s`)
+    sourceChapters.map(({ title }) => `life-${title.slice(0, 4)}s`)
   )
-  assert.equal(catalog.chapters[0].title, '1930년대 — 안면도 중장리의 막내')
-  assert.equal(catalog.chapters[0].subtitle, '안면도 중장리의 막내')
-  assert.ok(
-    catalog.chapters.find(({ id }) => id === 'life-1970s').description.includes('1972~1973년')
+  assert.deepEqual(
+    catalog.chapters.map(({ title }) => title),
+    sourceChapters.map(({ title }) => title)
   )
-  assert.equal(catalog.chapters.at(-1).url, '/read/2020s.html')
   assert.equal(readFileSync(path.join(root, mainFilename), 'utf8'), original)
   // The generated front matter adds one leading separator newline; the entire source is byte-for-byte present.
   assert.equal(readPage('life-story.md').content.trimStart(), original)
-  assert.ok(readPage('life-story.md').content.includes('## 이 연대기를 움직이는 인과'))
   for (let index = 0; index < catalog.chapters.length; index++) {
     const chapter = catalog.chapters[index]
-    const decade = String(1930 + index * 10)
+    const section = sourceChapters[index]
+    const decade = section.title.slice(0, 4)
     const page = readPage(`${decade}s.md`)
-    const start = original.indexOf(`## ${chapter.title}\n`)
-    const bodyStart = start + `## ${chapter.title}\n`.length
-    const end = original.indexOf('\n## ', bodyStart)
-    const expectedBody = original.slice(bodyStart, end < 0 ? original.length : end + 1)
+    const nextSection = sourceHeadings[sourceHeadings.indexOf(section) + 1]
+    const expectedBody = original.slice(section.bodyStart, nextSection?.start ?? original.length)
     assert.equal(page.content.trimStart(), `# ${chapter.title}\n${expectedBody}`)
+    assert.equal(chapter.url, `/read/${decade}s.html`)
     assert.equal(page.data.commentId, chapter.id)
     assert.equal(page.data.kind, 'chapter')
     assert.equal(page.data.prev?.url ?? null, catalog.chapters[index - 1]?.url ?? null)
     assert.equal(page.data.next?.url ?? null, catalog.chapters[index + 1]?.url ?? null)
+    assert.equal(page.data.prev?.decade ?? null, catalog.chapters[index - 1]?.decade ?? null)
+    assert.equal(page.data.next?.decade ?? null, catalog.chapters[index + 1]?.decade ?? null)
     assert.ok(page.data.minutes >= 1)
   }
-  assert.ok(!readPage('2020s.md').content.includes('이 연대기를 움직이는 인과'))
+})
+
+test('모든 연대 제목과 소제목, 마지막 제목을 바꿔도 기존 주소와 댓글 ID를 유지한다', (t) => {
+  const { write, run, readPage } = fixture(t)
+  const before = run().catalog.chapters
+  const renamed = original
+    .replace(/^## (\d{4})년대[^\n]*$/gm, '## $1년대: 새로 정리한 이야기')
+    .replace(/^### .+$/gm, '### 새롭게 묶은 소재')
+    .replace(/^## (?!\d{4}년대).+$/gm, '## 함께 돌아보는 삶')
+  write(mainFilename, renamed)
+  const after = run().catalog.chapters
+  assert.deepEqual(
+    after.map(({ id, url }) => ({ id, url })),
+    before.map(({ id, url }) => ({ id, url }))
+  )
+  for (const chapter of after) {
+    assert.equal(chapter.subtitle, '새로 정리한 이야기')
+    const page = readPage(`${chapter.id.slice(5)}.md`)
+    assert.equal(page.data.commentId, chapter.id)
+    assert.equal(page.data.title, `${chapter.decade}: 새로 정리한 이야기`)
+    assert.ok(page.content.includes('### 새롭게 묶은 소재'))
+  }
+  assert.equal(readPage('life-story.md').content.trimStart(), renamed)
+})
+
+test('새 연대도 원고에 놓인 순서대로 만들고 연대가 아닌 절과 코드블록은 분리한다', (t) => {
+  const { write, run, readPage } = fixture(t)
+  write(
+    mainFilename,
+    '# 소재\n\n소개\n\n## 2030년대：앞으로의 기억\n\n새 기록\n\n```md\n## 2040년대 — 예시\n```\n\n## 별도 정리\n\n전체에서만 읽는 정리\n\n## 1920년대 – 앞선 기억\n\n옛 기록\n\n## 1950년대\n\n또 다른 기록\n'
+  )
+  const { catalog } = run()
+  assert.deepEqual(
+    catalog.chapters.map(({ id }) => id),
+    ['life-2030s', 'life-1920s', 'life-1950s']
+  )
+  assert.equal(catalog.chapters[0].subtitle, '앞으로의 기억')
+  assert.equal(catalog.chapters[2].subtitle, '')
+  assert.equal(readPage('2030s.md').data.next.url, '/read/1920s.html')
+  assert.equal(readPage('1920s.md').data.prev.decade, '2030년대')
+  assert.ok(!readPage('2030s.md').content.includes('전체에서만 읽는 정리'))
+  assert.ok(readPage('life-story.md').content.includes('전체에서만 읽는 정리'))
+})
+
+test('중복 연대, 10년 단위가 아닌 연도, 연대가 없는 원고는 명확한 오류로 알린다', (t) => {
+  const { write, run } = fixture(t)
+  write(mainFilename, '# 소재\n\n## 2030년대: 하나\n\n본문\n\n## 2030년대 — 둘\n\n본문\n')
+  assert.throws(run, /연대 제목 중복: 2030년대/)
+  write(mainFilename, '# 소재\n\n## 2035년대 — 잘못된 연도\n\n본문\n')
+  assert.throws(run, /10년 단위/)
+  write(mainFilename, '# 소재\n\n## 삶의 정리\n\n본문\n')
+  assert.throws(run, /연대 제목이 없습니다/)
+})
+
+test('연대 제목의 구분자를 바꿔도 표시 이름에서 연도가 중복되지 않는다', () => {
+  for (const title of [
+    '2030년대 — 새 이야기',
+    '2030년대–새 이야기',
+    '2030년대- 새 이야기',
+    '2030년대: 새 이야기',
+    '2030년대：새 이야기',
+    '2030년대 새 이야기',
+  ])
+    assert.deepEqual(parseDecadeHeading(title), {
+      year: '2030',
+      label: '2030년대',
+      subtitle: '새 이야기',
+    })
+  assert.deepEqual(parseDecadeHeading('2030년대'), {
+    year: '2030',
+    label: '2030년대',
+    subtitle: '',
+  })
+  assert.equal(parseDecadeHeading('2035년대 — 이야기'), null)
+  assert.equal(parseDecadeHeading('가족의 기억'), null)
+})
+
+test('전체글의 댓글 링크는 새 연대와 바뀐 제목에서도 같은 연대별 댓글 주소를 사용한다', async () => {
+  const md = await createMarkdownRenderer(repo, {
+    config(markdown) {
+      decadeComments(markdown, { base: '/autobio-bae/', enabled: true })
+    },
+  })
+  const source =
+    '# 소재\n\n## 2030년대: 새 이야기\n\n본문\n\n```md\n## 2040년대 — 코드 예시\n```\n\n## 정리 제목 변경\n\n요약\n\n## 1930년대 – 다른 제목\n\n기억\n'
+  const rendered = md.render(source, { frontmatter: { kind: 'full' } })
+  const links = [...rendered.matchAll(/class="decade-comments-link"><a href="([^"]+)"/g)].map(
+    (match) => match[1]
+  )
+  assert.deepEqual(links, [
+    '/autobio-bae/read/2030s.html#comments',
+    '/autobio-bae/read/1930s.html#comments',
+  ])
+  assert.ok(rendered.indexOf('2030s.html#comments') < rendered.indexOf('정리 제목 변경'))
+  assert.ok(
+    !md
+      .render(source, { frontmatter: { kind: 'chapter' } })
+      .includes('class="decade-comments-link"')
+  )
 })
 
 test('루트와 content의 자료를 자동 발견하고 내용 수정에도 댓글 ID를 유지한다', (t) => {
@@ -101,6 +207,8 @@ test('임시글, 운영 문서, 프로젝트 내부와 심볼릭 링크의 Markd
     'AGENTS.md',
     'SETUP.md',
     'DEPLOYMENT.md',
+    '윤문제안서.md',
+    'content/편집/윤문제안서.md',
     'site/manual.md',
     'scripts/notes.md',
     'node_modules/pkg/README.md',
@@ -117,6 +225,20 @@ test('임시글, 운영 문서, 프로젝트 내부와 심볼릭 링크의 Markd
     catalog.documents.map(({ title }) => title),
     ['공개 기록']
   )
+})
+
+test('윤문제안서는 정확한 파일명으로만 게시에서 제외하며 원본은 보존한다', (t) => {
+  const { root, write, run } = fixture(t)
+  const editorial = '# 편집 참고\n\n제안 내용은 사이트에 게시하지 않습니다.\n'
+  write('윤문제안서.md', editorial)
+  write('content/윤문제안서_공개.md', '# 가족에게 공유할 제안')
+  const { catalog, manifest } = run()
+  assert.deepEqual(
+    catalog.documents.map(({ title }) => title),
+    ['가족에게 공유할 제안']
+  )
+  assert.ok(!manifest.sources.some(({ source }) => source === '윤문제안서.md'))
+  assert.equal(readFileSync(path.join(root, '윤문제안서.md'), 'utf8'), editorial)
 })
 
 test('중복 ID, 예약된 연대 ID와 충돌, 안전하지 않은 경로를 빌드 전에 거절한다', (t) => {

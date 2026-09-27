@@ -1,4 +1,5 @@
 import type { MarkdownOptions } from 'vitepress'
+import { parseDecadeHeading } from '../shared/decade-heading.mjs'
 
 type Markdown = Parameters<NonNullable<MarkdownOptions['config']>>[0]
 
@@ -28,10 +29,7 @@ export function decadeComments(md: Markdown, options: { base: string; enabled: b
         // Close the preceding decade before any new H2, including the final afterword.
         appendLink()
         const heading = state.tokens[index + 1]
-        decade =
-          heading?.type === 'inline'
-            ? heading.content.match(/^(19[3-9]0|20[0-2]0)년대(?:\s|$)/)?.[1]
-            : undefined
+        decade = heading?.type === 'inline' ? parseDecadeHeading(heading.content)?.year : undefined
       }
       tokens.push(token)
     }

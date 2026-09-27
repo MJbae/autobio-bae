@@ -1,4 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { parseDecadeHeading } from '../site/.vitepress/shared/decade-heading.mjs'
+
+const manuscript = readFileSync(new URL('../연대별_서사_소재_정리.md', import.meta.url), 'utf8')
+const sourceHeadings = [...manuscript.matchAll(/^## (.+)$/gm)].map((match) => match[1])
+const chapters = sourceHeadings.map(parseDecadeHeading).filter((heading) => heading !== null)
+const first = chapters[0]
+const firstTitle = sourceHeadings.find((title) => parseDecadeHeading(title))!
+const firstParagraph = manuscript
+  .slice(manuscript.indexOf(`## ${firstTitle}`))
+  .split(/\n\s*\n/)
+  .find((paragraph) => !paragraph.startsWith('#'))!
 
 async function expectNoHorizontalOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -9,8 +21,8 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('./')
   await expect(page.getByRole('heading', { name: '아버지의 기록', exact: true })).toBeVisible()
-  const chapters = page.getByRole('navigation', { name: '연대별 소재', exact: true })
-  await expect(chapters.locator('a.chapter-row')).toHaveCount(10)
+  const chapterList = page.getByRole('navigation', { name: '연대별 소재', exact: true })
+  await expect(chapterList.locator('a.chapter-row')).toHaveCount(chapters.length)
   await expect(page.locator('.resume-link')).toHaveCount(0)
   await expect(page.getByRole('searchbox')).toHaveCount(0)
   await expect(page.getByRole('group', { name: '자료 종류' })).toHaveCount(0)
@@ -19,15 +31,13 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   await expectNoHorizontalOverflow(page)
   await page.screenshot({ path: `test-results/${info.project.name}-home.png`, fullPage: true })
 
-  const firstChapter = chapters.getByRole('link', { name: /1930년대.*안면도 중장리의 막내/ })
+  const firstChapter = chapterList.locator(`a[href$="/read/${first.year}s.html"]`)
   const touchTarget = await firstChapter.boundingBox()
   expect(touchTarget?.height).toBeGreaterThanOrEqual(44)
   await firstChapter.click()
-  await expect(page).toHaveURL(/\/read\/1930s\.html$/)
-  await expect(page.locator('.story-content')).toContainText(
-    '1936년 안면도 중장리에서 3남 2녀 중 막내로 태어났다'
-  )
-  await expect(page.locator('.article-header h1')).toHaveText('안면도 중장리의 막내')
+  await expect(page).toHaveURL(new RegExp(`/read/${first.year}s\\.html$`))
+  await expect(page.locator('.story-content')).toContainText(firstParagraph.replace(/\*\*/g, ''))
+  await expect(page.locator('.article-header h1')).toHaveText(first.subtitle || first.label)
   await expect(page.locator('.story-content h1')).toBeHidden()
   await expect(page.getByRole('link', { name: '목록', exact: true })).toBeVisible()
   await expect(page.locator('#comments')).toHaveCount(0)
@@ -36,6 +46,27 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   await expectNoHorizontalOverflow(page)
   await page.screenshot({ path: `test-results/${info.project.name}-reader.png`, fullPage: true })
   expect(errors).toEqual([])
+})
+
+test('이어서 읽기에 저장된 옛 제목도 현재 원고의 제목으로 보여 준다', async ({ page }) => {
+  await page.addInitScript((year) => {
+    localStorage.setItem(
+      'family-library:reading',
+      JSON.stringify({
+        id: `life-${year}s`,
+        title: '수정하기 전의 제목',
+        url: `/read/${year}s.html`,
+        scroll: 0,
+        progress: 10,
+      })
+    )
+  }, first.year)
+  await page.goto('./')
+  const resume = page.locator('.resume-link')
+  await expect(resume.locator('.resume-title')).toHaveText(first.subtitle || first.label)
+  await expect(resume).toHaveAttribute('href', `/autobio-bae/read/${first.year}s.html`)
+  await resume.click()
+  await expect(page.locator('.article-header h1')).toHaveText(first.subtitle || first.label)
 })
 
 test('큰 글씨와 읽던 위치를 기억한다', async ({ page }) => {
@@ -51,9 +82,7 @@ test('큰 글씨와 읽던 위치를 기억한다', async ({ page }) => {
   await expectNoHorizontalOverflow(page)
 
   await expect(page.getByRole('button', { name: '목차', exact: true })).toHaveCount(0)
-  await page
-    .getByRole('heading', { name: '창고를 짓기 전, 방수포 아래의 벼를 지키다', exact: true })
-    .scrollIntoViewIfNeeded()
+  await page.locator('.story-content h3').nth(1).scrollIntoViewIfNeeded()
   await expect
     .poll(async () =>
       page.evaluate(
@@ -100,12 +129,12 @@ test('전체 글을 한 번에 읽고 잘못된 주소에서 목록으로 돌아
   await page.goto('./')
   await page.getByRole('link', { name: '전체 소재 보기', exact: true }).click()
   await expect(page).toHaveURL(/\/read\/life-story\.html$/)
-  await expect(page.locator('.story-content')).toContainText('이 연대기를 움직이는 인과')
-  await expect(page.locator('.story-content')).toContainText('약 1,000ha')
+  await expect(page.locator('.story-content h2')).toHaveCount(sourceHeadings.length)
+  await expect(page.locator('.story-content h2').last()).toContainText(sourceHeadings.at(-1)!)
   await expectNoHorizontalOverflow(page)
 
   await page.goto('missing-page.html')
   await expect(page.getByRole('heading', { name: '이야기를 찾지 못했습니다.' })).toBeVisible()
   await page.getByRole('link', { name: '목록으로 돌아가기', exact: true }).click()
-  await expect(page.locator('.chapter-row')).toHaveCount(10)
+  await expect(page.locator('.chapter-row')).toHaveCount(chapters.length)
 })
