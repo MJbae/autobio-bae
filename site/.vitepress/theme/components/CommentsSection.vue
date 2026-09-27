@@ -11,7 +11,7 @@ import {
 } from '../lib/comments'
 
 const props = withDefaults(defineProps<{ pageId: string; pageTitle: string; heading?: string }>(), {
-  heading: '댓글',
+  heading: '기억 보태기',
 })
 type ReplyContext = Pick<FamilyComment, 'id' | 'author' | 'body'>
 type Draft = { body: string; replyTo: ReplyContext | null }
@@ -149,10 +149,7 @@ async function loadComments(more = false) {
     hasMore.value = result.hasMore
   } catch (error) {
     if (version !== requestVersion || pageId !== props.pageId) return
-    loadError.value = friendlyError(
-      error,
-      '댓글을 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.'
-    )
+    loadError.value = friendlyError(error, '불러오지 못했어요. 다시 시도해 주세요.')
   } finally {
     if (version === requestVersion && pageId === props.pageId) {
       loading.value = false
@@ -274,7 +271,7 @@ async function startEdit(comment: FamilyComment) {
   editBody.value = comment.body
   editError.value = ''
   deleteError.value = null
-  announcement.value = '댓글을 수정하고 있어요.'
+  announcement.value = '수정 중이에요.'
   await nextTick()
   if (!mounted || version !== requestVersion) return
   editInput.value?.focus({ preventScroll: true })
@@ -297,9 +294,9 @@ async function saveEdit(comment: FamilyComment) {
   if (savingEdit.value || editingId.value !== comment.id || !ownsComment(comment)) return
   const cleanBody = editBody.value.trim()
   editError.value = !cleanBody
-    ? '남기고 싶은 이야기를 적어 주세요.'
+    ? '내용을 적어 주세요.'
     : cleanBody.length > 2000
-      ? '댓글은 2,000자까지 적을 수 있어요.'
+      ? '2,000자까지 적을 수 있어요.'
       : ''
   if (editError.value) {
     await nextTick()
@@ -321,15 +318,12 @@ async function saveEdit(comment: FamilyComment) {
     editingId.value = null
     editBody.value = ''
     editError.value = ''
-    announcement.value = '댓글을 수정했어요.'
+    announcement.value = '수정했어요.'
     await nextTick()
     if (mounted && version === requestVersion) editButtons.get(updated.id)?.focus()
   } catch (error) {
     if (!mounted || version !== requestVersion || pageId !== props.pageId) return
-    editError.value = friendlyError(
-      error,
-      '수정하지 못했어요. 작성한 내용은 그대로 있으니 다시 시도해 주세요.'
-    )
+    editError.value = friendlyError(error, '저장하지 못했어요. 다시 시도해 주세요.')
   } finally {
     if (mounted && version === requestVersion && pageId === props.pageId) savingEdit.value = false
   }
@@ -337,9 +331,7 @@ async function saveEdit(comment: FamilyComment) {
 
 async function removeComment(comment: FamilyComment) {
   if (!ownsComment(comment) || deletingId.value || editingId.value) return
-  const confirmation = comment.parentId
-    ? '이 답글을 삭제할까요? 삭제한 답글은 되돌릴 수 없어요.'
-    : '이 댓글을 삭제할까요? 삭제한 댓글은 되돌릴 수 없어요. 달린 답글은 남습니다.'
+  const confirmation = comment.parentId ? '답글을 삭제할까요?' : '댓글을 삭제할까요? 답글은 남아요.'
   if (!window.confirm(confirmation)) return
   const version = requestVersion
   const pageId = props.pageId
@@ -353,14 +345,14 @@ async function removeComment(comment: FamilyComment) {
     localComments.delete(comment.id)
     comments.value = comments.value.filter((item) => item.id !== comment.id)
     if (replyTo.value?.id === comment.id) replyTo.value = null
-    announcement.value = '댓글을 삭제했어요.'
+    announcement.value = '삭제했어요.'
     await nextTick()
     if (mounted && version === requestVersion) section.value?.focus({ preventScroll: true })
   } catch (error) {
     if (!mounted || version !== requestVersion || pageId !== props.pageId) return
     deleteError.value = {
       id: comment.id,
-      message: friendlyError(error, '삭제하지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+      message: friendlyError(error, '삭제하지 못했어요. 다시 시도해 주세요.'),
     }
   } finally {
     if (mounted && version === requestVersion && pageId === props.pageId) deletingId.value = null
@@ -377,7 +369,7 @@ async function focusComposer() {
 async function startReply(comment: FamilyComment) {
   replyTo.value = { id: comment.id, author: comment.author, body: comment.body }
   submitError.value = ''
-  announcement.value = `${comment.author} 님의 댓글에 답글을 쓰고 있어요.`
+  announcement.value = `${comment.author} 님에게 답글`
   await nextTick()
   bodyInput.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   bodyInput.value?.focus({ preventScroll: true })
@@ -385,7 +377,7 @@ async function startReply(comment: FamilyComment) {
 
 async function cancelReply() {
   replyTo.value = null
-  announcement.value = '답글을 취소했어요. 작성 중인 내용은 그대로 있어요.'
+  announcement.value = '답글을 취소했어요.'
   await nextTick()
   bodyInput.value?.focus()
 }
@@ -410,12 +402,12 @@ async function submit() {
   authorError.value = !cleanAuthor
     ? '이름을 적어 주세요.'
     : cleanAuthor.length > 24
-      ? '이름은 24자까지 적을 수 있어요.'
+      ? '이름은 24자까지 적어 주세요.'
       : ''
   bodyError.value = !cleanBody
-    ? '남기고 싶은 이야기를 적어 주세요.'
+    ? '내용을 적어 주세요.'
     : cleanBody.length > 2000
-      ? '댓글은 2,000자까지 적을 수 있어요.'
+      ? '2,000자까지 적을 수 있어요.'
       : ''
   if (authorError.value || bodyError.value) {
     await nextTick()
@@ -443,13 +435,10 @@ async function submit() {
     comments.value = [comment, ...comments.value.filter((item) => item.id !== comment.id)]
     body.value = ''
     replyTo.value = null
-    announcement.value = '댓글을 남겼어요. 기억을 보태 주셔서 고맙습니다.'
+    announcement.value = '남겼어요.'
   } catch (error) {
     if (!mounted || version !== requestVersion || pageId !== props.pageId) return
-    submitError.value = friendlyError(
-      error,
-      '댓글을 남기지 못했어요. 작성한 내용은 그대로 있으니 다시 시도해 주세요.'
-    )
+    submitError.value = friendlyError(error, '저장하지 못했어요. 다시 시도해 주세요.')
   } finally {
     if (mounted && version === requestVersion && pageId === props.pageId) submitting.value = false
   }
@@ -498,7 +487,7 @@ defineExpose({ focusComposer })
           v-model="author"
           name="author"
           type="text"
-          placeholder="가족이 알아볼 수 있는 이름"
+          placeholder="이름 또는 호칭"
           autocomplete="nickname"
           maxlength="24"
           required
@@ -512,13 +501,15 @@ defineExpose({ focusComposer })
       </div>
 
       <div class="field">
-        <label for="comment-body">{{ replyTo ? '답글' : '남기고 싶은 이야기' }}</label>
+        <label for="comment-body">{{ replyTo ? '답글' : '내용' }}</label>
         <textarea
           id="comment-body"
           ref="bodyInput"
           v-model="body"
           name="comment"
-          placeholder="기억나는 일이나 의견을 적어 주세요."
+          :placeholder="
+            replyTo ? '덧붙일 기억을 적어 주세요.' : '그때의 장면이나 빠진 이야기를 적어 주세요.'
+          "
           maxlength="2000"
           rows="4"
           required
@@ -540,7 +531,7 @@ defineExpose({ focusComposer })
       <p v-if="submitError" class="error-message" role="alert">{{ submitError }}</p>
       <p
         class="announcement"
-        :class="{ 'sr-only': !announcement.startsWith('댓글을 남겼어요.') }"
+        :class="{ 'sr-only': !announcement.startsWith('남겼어요.') }"
         aria-live="polite"
         aria-atomic="true"
       >
@@ -553,15 +544,15 @@ defineExpose({ focusComposer })
           :disabled="submitting || cooldownSeconds > 0"
           :aria-busy="submitting"
         >
-          {{ submitting ? '남기는 중…' : replyTo ? '답글 남기기' : '댓글 남기기' }}
+          {{ submitting ? '저장 중…' : '남기기' }}
         </button>
         <p v-if="cooldownSeconds" class="cooldown-note">
-          {{ cooldownSeconds }}초 뒤에 다시 남길 수 있어요.
+          {{ cooldownSeconds }}초 후에 다시 남겨 주세요.
         </p>
       </div>
     </form>
 
-    <p v-if="loading" class="comments-status" role="status">댓글을 불러오고 있어요.</p>
+    <p v-if="loading" class="comments-status" role="status">불러오는 중…</p>
 
     <ol v-if="comments.length" class="comment-list" aria-label="댓글 목록">
       <li
@@ -585,7 +576,7 @@ defineExpose({ focusComposer })
               <span>{{ commentById.get(comment.parentId)?.author }} 님에게 답글</span>
               <p>{{ excerpt(commentById.get(comment.parentId)?.body || '') }}</p>
             </template>
-            <span v-else>앞서 남긴 댓글에 대한 답글</span>
+            <span v-else>이전 댓글에 단 답글</span>
           </div>
           <form
             v-if="editingId === comment.id"
@@ -623,7 +614,7 @@ defineExpose({ focusComposer })
             </div>
             <div class="edit-actions">
               <button class="text-button save-edit" type="submit" :disabled="savingEdit">
-                {{ savingEdit ? '저장하는 중…' : '저장' }}
+                {{ savingEdit ? '저장 중…' : '저장' }}
               </button>
               <button class="text-button" type="button" :disabled="savingEdit" @click="cancelEdit">
                 취소
@@ -638,10 +629,10 @@ defineExpose({ focusComposer })
                 class="text-button reply-button"
                 type="button"
                 :disabled="submitting || deletingId === comment.id"
-                :aria-label="`${comment.author} 님에게 답글 쓰기`"
+                :aria-label="`${comment.author} 님에게 답글`"
                 @click="startReply(comment)"
               >
-                답글 쓰기
+                답글
               </button>
               <div v-if="ownsComment(comment)" class="owner-actions">
                 <button
@@ -660,7 +651,7 @@ defineExpose({ focusComposer })
                   :aria-busy="deletingId === comment.id"
                   @click="removeComment(comment)"
                 >
-                  {{ deletingId === comment.id ? '삭제하는 중…' : '삭제' }}
+                  {{ deletingId === comment.id ? '삭제 중…' : '삭제' }}
                 </button>
               </div>
             </div>
@@ -691,7 +682,7 @@ defineExpose({ focusComposer })
       :aria-busy="loadingMore"
       @click="loadComments(true)"
     >
-      {{ loadingMore ? '불러오는 중…' : '이전 이야기 더 보기' }}
+      {{ loadingMore ? '불러오는 중…' : '댓글 더 보기' }}
     </button>
   </section>
 </template>

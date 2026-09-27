@@ -38,7 +38,7 @@ const showComments = computed(
   () => commentsEnabled && Boolean(pageId.value) && frontmatter.value.kind !== 'full'
 )
 const commentHeading = computed(() =>
-  frontmatter.value.decade ? `${frontmatter.value.decade} 댓글` : '댓글'
+  frontmatter.value.decade ? `${frontmatter.value.decade} 기억 보태기` : '기억 보태기'
 )
 const fontSize = ref(1)
 const sizeLabels = ['보통', '크게', '더 크게']

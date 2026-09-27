@@ -43,6 +43,6 @@ export function decadeComments(md: Markdown, options: { base: string; enabled: b
     const decade = tokens[index].meta.decade as string
     const base = options.base.endsWith('/') ? options.base : `${options.base}/`
     const href = md.utils.escapeHtml(`${base}read/${decade}s.html#comments`)
-    return `<p class="decade-comments-link"><a href="${href}">${decade}년대 댓글 남기기</a></p>\n`
+    return `<p class="decade-comments-link"><a href="${href}">${decade}년대 기억 보태기</a></p>\n`
   }
 }

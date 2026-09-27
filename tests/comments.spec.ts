@@ -9,7 +9,7 @@ const commentsFor = (pageId: string) => `${documentsBase}/pages/${pageId}/commen
 async function openComments(page: Page, decade = '1930') {
   await page.goto(`/read/${decade}s.html#comments`)
   await page.locator('#comments').scrollIntoViewIfNeeded()
-  await expect(page.getByRole('heading', { name: `${decade}년대 댓글`, exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: `${decade}년대 기억 보태기`, exact: true })).toBeVisible()
   await expect(page.locator('.comment-composer')).toBeVisible()
   await expect(page.locator('.comments-status')).toHaveCount(0)
 }
@@ -33,10 +33,10 @@ async function storedComments(request: APIRequestContext, pageId = 'life-1930s')
 
 async function postMemory(page: Page, author: string, body: string) {
   await page.getByLabel(/^이름/).fill(author)
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(body)
+  await page.getByLabel('내용', { exact: true }).fill(body)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   const comment = page.getByRole('article', { name: `${author} 님의 댓글`, exact: true })
   await expect(comment.locator('.comment-body')).toHaveText(body)
@@ -76,16 +76,16 @@ test('a mobile visitor posts without signing in; another browser reads the store
   await openComments(page)
   await expect(page.locator('.comment-item')).toHaveCount(0)
   await page.getByLabel(/^이름/).fill('큰딸')
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(original)
+  await page.getByLabel('내용', { exact: true }).fill(original)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   await expect(
     page.getByRole('article', { name: '큰딸 님의 댓글' }).locator('.comment-body')
   ).toHaveText(original)
-  await expect(page.locator('.announcement')).toContainText('댓글을 남겼어요.')
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue('')
+  await expect(page.locator('.announcement')).toContainText('남겼어요.')
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue('')
   await expect(page.locator('.comment-composer button[type="submit"]')).toBeDisabled()
 
   const originalDocs = await storedComments(request)
@@ -110,18 +110,18 @@ test('a mobile visitor posts without signing in; another browser reads the store
       familyPage.getByRole('article', { name: '큰딸 님의 댓글' }).locator('.comment-body')
     ).toHaveText(original)
     await expect(familyPage.getByLabel(/^이름/)).toHaveValue('')
-    await familyPage.getByRole('button', { name: '큰딸 님에게 답글 쓰기', exact: true }).click()
+    await familyPage.getByRole('button', { name: '큰딸 님에게 답글', exact: true }).click()
     await familyPage.getByLabel(/^이름/).fill('막내')
     await familyPage
       .getByLabel('답글', { exact: true })
       .fill('맞아요. 저도 우산을 들고 마중 나갔어요.')
-    await familyPage.getByRole('button', { name: '답글 남기기', exact: true }).click()
+    await familyPage.getByRole('button', { name: '남기기', exact: true }).click()
     const reply = familyPage.getByRole('article', { name: '막내 님의 답글' })
     await expect(reply.locator('.comment-body')).toHaveText(
       '맞아요. 저도 우산을 들고 마중 나갔어요.'
     )
     await expect(reply.locator('.parent-context')).toContainText('큰딸 님에게 답글')
-    await expect(reply.getByRole('button', { name: /답글 쓰기/ })).toHaveCount(0)
+    await expect(reply.getByRole('button', { name: /답글/ })).toHaveCount(0)
 
     const saved = await storedComments(request)
     expect(saved).toHaveLength(2)
@@ -147,11 +147,11 @@ test('names survive reloads, drafts stay with their article, and posted comments
   const published = '1940년대에는 갯벌에서 자주 놀았다고 들었어요.'
   await openComments(page)
   await page.getByLabel(/^이름/).fill('큰아들')
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(draft)
+  await page.getByLabel('내용', { exact: true }).fill(draft)
   await page.reload()
   await page.locator('#comments').scrollIntoViewIfNeeded()
   await expect(page.getByLabel(/^이름/)).toHaveValue('큰아들')
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(draft)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue(draft)
 
   await page
     .getByRole('navigation', { name: '앞뒤 이야기' })
@@ -159,13 +159,13 @@ test('names survive reloads, drafts stay with their article, and posted comments
     .click()
   await expect(page).toHaveURL(/\/read\/1940s\.html$/)
   await showComments(page)
-  await expect(page.getByRole('heading', { name: '1940년대 댓글', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '1940년대 기억 보태기', exact: true })).toBeVisible()
   await expect(page.getByLabel(/^이름/)).toHaveValue('큰아들')
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue('')
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(published)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue('')
+  await page.getByLabel('내용', { exact: true }).fill(published)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   await expect(page.locator('.comment-body')).toHaveText(published)
 
@@ -175,7 +175,7 @@ test('names survive reloads, drafts stay with their article, and posted comments
     .click()
   await expect(page).toHaveURL(/\/read\/1930s\.html$/)
   await showComments(page)
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(draft)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue(draft)
   await expect(page.locator('.comment-item')).toHaveCount(0)
   expect(await storedComments(request, 'life-1930s')).toHaveLength(0)
   expect(await storedComments(request, 'life-1940s')).toHaveLength(1)
@@ -196,10 +196,10 @@ test('names survive reloads, drafts stay with their article, and posted comments
     await openComments(otherPage)
     await expect(otherPage.locator('.comment-item')).toHaveCount(0)
     await otherPage.getByLabel(/^이름/).fill('둘째')
-    await otherPage.getByLabel('남기고 싶은 이야기', { exact: true }).fill(earlierMemory)
+    await otherPage.getByLabel('내용', { exact: true }).fill(earlierMemory)
     await otherPage
       .locator('.comment-composer')
-      .getByRole('button', { name: '댓글 남기기', exact: true })
+      .getByRole('button', { name: '남기기', exact: true })
       .click()
     await expect(otherPage.locator('.comment-body')).toHaveText(earlierMemory)
     await openComments(otherPage, '1940')
@@ -208,10 +208,10 @@ test('names survive reloads, drafts stay with their article, and posted comments
 
     await page.reload()
     await showComments(page)
-    await expect(page.getByRole('heading', { name: '1930년대 댓글', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })).toBeVisible()
     await expect(page.locator('.comment-body')).toHaveText(earlierMemory)
     await expect(page.getByText(published, { exact: true })).toHaveCount(0)
-    await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(draft)
+    await expect(page.getByLabel('내용', { exact: true })).toHaveValue(draft)
 
     const earlierComments = await storedComments(request, 'life-1930s')
     const laterComments = await storedComments(request, 'life-1940s')
@@ -233,31 +233,31 @@ test('the full story links each decade to its own comments and has no combined t
 }) => {
   await page.goto('/read/life-story.html')
   await expect(page.locator('#comments, .comment-composer')).toHaveCount(0)
-  const decadeLinks = page.getByRole('link', { name: /^\d{4}년대 댓글 남기기$/ })
+  const decadeLinks = page.getByRole('link', { name: /^\d{4}년대 기억 보태기$/ })
   await expect(decadeLinks).toHaveCount(10)
   for (let decade = 1930; decade <= 2020; decade += 10) {
     await expect(
-      page.getByRole('link', { name: `${decade}년대 댓글 남기기`, exact: true })
+      page.getByRole('link', { name: `${decade}년대 기억 보태기`, exact: true })
     ).toHaveAttribute('href', `/read/${decade}s.html#comments`)
   }
 
-  const commentLink = page.getByRole('link', { name: '1930년대 댓글 남기기', exact: true })
+  const commentLink = page.getByRole('link', { name: '1930년대 기억 보태기', exact: true })
   await commentLink.click()
   await expect(page).toHaveURL(/\/read\/1930s\.html#comments$/)
   await showComments(page)
-  await expect(page.getByRole('heading', { name: '1930년대 댓글', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '1930년대 기억 보태기', exact: true })).toBeVisible()
   const memory = '전체 이야기를 읽다가 중장리 기억을 남겨요.'
   await page.getByLabel(/^이름/).fill('큰딸')
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(memory)
+  await page.getByLabel('내용', { exact: true }).fill(memory)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   await expect(page.locator('.comment-body')).toHaveText(memory)
 
   await page.goto('/read/life-story.html')
   await expect(page.locator('#comments, .comment-composer')).toHaveCount(0)
-  await page.getByRole('link', { name: '1930년대 댓글 남기기', exact: true }).click()
+  await page.getByRole('link', { name: '1930년대 기억 보태기', exact: true }).click()
   await showComments(page)
   await expect(page.locator('.comment-body')).toHaveText(memory)
   const saved = await storedComments(request, 'life-1930s')
@@ -273,10 +273,10 @@ test('empty fields are explained and HTML in a posted name or comment is display
   await openComments(page)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   await expect(page.getByText('이름을 적어 주세요.', { exact: true })).toBeVisible()
-  await expect(page.getByText('남기고 싶은 이야기를 적어 주세요.', { exact: true })).toBeVisible()
+  await expect(page.getByText('내용을 적어 주세요.', { exact: true })).toBeVisible()
   await expect(page.getByLabel(/^이름/)).toBeFocused()
   expect(await storedComments(request)).toHaveLength(0)
 
@@ -284,10 +284,10 @@ test('empty fields are explained and HTML in a posted name or comment is display
   const untrustedBody =
     '<img src=x onerror="window.commentInjected=true"><script>window.commentInjected=true</script>\n이 글자는 그대로 보여야 해요.'
   await page.getByLabel(/^이름/).fill(untrustedName)
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(untrustedBody)
+  await page.getByLabel('내용', { exact: true }).fill(untrustedBody)
   await page
     .locator('.comment-composer')
-    .getByRole('button', { name: '댓글 남기기', exact: true })
+    .getByRole('button', { name: '남기기', exact: true })
     .click()
   await expect(page.locator('.comment-body')).toHaveText(untrustedBody)
   await expect(page.locator('.comment-meta strong')).toHaveText(untrustedName)
@@ -324,10 +324,10 @@ test('older comments load in bounded pages without duplicate entries', async ({
   await expect(page.locator('.comment-item')).toHaveCount(30)
   await expect(page.locator('.comment-body').first()).toHaveText('기억 31')
   await expect(page.locator('.comment-body').last()).toHaveText('기억 2')
-  await page.getByRole('button', { name: '이전 이야기 더 보기', exact: true }).click()
+  await page.getByRole('button', { name: '댓글 더 보기', exact: true }).click()
   await expect(page.locator('.comment-item')).toHaveCount(31)
   await expect(page.locator('.comment-body').last()).toHaveText('기억 1')
-  await expect(page.getByRole('button', { name: '이전 이야기 더 보기', exact: true })).toHaveCount(
+  await expect(page.getByRole('button', { name: '댓글 더 보기', exact: true })).toHaveCount(
     0
   )
   const ids = await page
@@ -347,7 +347,7 @@ test('the original browser can cancel and save an edit without changing the new-
   await openComments(page)
   const comment = await postMemory(page, '큰딸', original)
   const [before] = await storedComments(request)
-  await page.getByLabel('남기고 싶은 이야기', { exact: true }).fill(separateDraft)
+  await page.getByLabel('내용', { exact: true }).fill(separateDraft)
 
   await comment.getByRole('button', { name: '수정', exact: true }).click()
   const editor = comment.getByRole('textbox', { name: '댓글 수정', exact: true })
@@ -359,7 +359,7 @@ test('the original browser can cancel and save an edit without changing the new-
   await comment.getByRole('button', { name: '취소', exact: true }).click()
   await expect(editor).toHaveCount(0)
   await expect(comment.locator('.comment-body')).toHaveText(original)
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(separateDraft)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue(separateDraft)
   expect((await storedComments(request))[0].fields).toEqual(before.fields)
 
   await comment.getByRole('button', { name: '수정', exact: true }).click()
@@ -368,7 +368,7 @@ test('the original browser can cancel and save an edit without changing the new-
   await expect(editor).toHaveCount(0)
   await expect(comment.locator('.comment-body')).toHaveText(revised)
   await expect(comment.locator('.comment-edited')).toHaveText('(수정됨)')
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(separateDraft)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue(separateDraft)
 
   const [after] = await storedComments(request)
   expect(after.name).toBe(before.name)
@@ -386,7 +386,7 @@ test('the original browser can cancel and save an edit without changing the new-
   await expect(comment.locator('.comment-body')).toHaveText(revised)
   await expect(comment.getByRole('button', { name: '수정', exact: true })).toBeVisible()
   await expect(comment.getByRole('button', { name: '삭제', exact: true })).toBeVisible()
-  await expect(page.getByLabel('남기고 싶은 이야기', { exact: true })).toHaveValue(separateDraft)
+  await expect(page.getByLabel('내용', { exact: true })).toHaveValue(separateDraft)
 })
 
 test('a different browser cannot manage someone else’s comment even when it uses the same name', async ({
@@ -457,10 +457,10 @@ test('deleting a parent keeps another family member’s reply editable by its or
   try {
     const otherPage = await otherContext.newPage()
     await openComments(otherPage)
-    await otherPage.getByRole('button', { name: '큰딸 님에게 답글 쓰기', exact: true }).click()
+    await otherPage.getByRole('button', { name: '큰딸 님에게 답글', exact: true }).click()
     await otherPage.getByLabel(/^이름/).fill('막내')
     await otherPage.getByLabel('답글', { exact: true }).fill('마당 한가운데 큰 감나무가 있었어요.')
-    await otherPage.getByRole('button', { name: '답글 남기기', exact: true }).click()
+    await otherPage.getByRole('button', { name: '남기기', exact: true }).click()
     const reply = otherPage.getByRole('article', { name: '막내 님의 답글', exact: true })
     await expect(reply.locator('.comment-body')).toHaveText('마당 한가운데 큰 감나무가 있었어요.')
     const storedReply = (await storedComments(request)).find(
@@ -561,7 +561,7 @@ test('a rejected edit keeps the edited text and leaves the stored body unchanged
   const editor = comment.getByRole('textbox', { name: '댓글 수정', exact: true })
   await editor.fill('   ')
   await comment.getByRole('button', { name: '저장', exact: true }).click()
-  await expect(comment.getByRole('alert')).toHaveText('남기고 싶은 이야기를 적어 주세요.')
+  await expect(comment.getByRole('alert')).toHaveText('내용을 적어 주세요.')
   await expect(editor).toHaveValue('   ')
   expect((await storedComments(request))[0].fields.body.stringValue).toBe(original)
   await editor.fill(unsaved)
