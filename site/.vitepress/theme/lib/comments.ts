@@ -1,10 +1,17 @@
 import { getApps, initializeApp } from 'firebase/app'
 import { configuration, isCommentsConfigured } from './firebase-config'
 export { isCommentsConfigured } from './firebase-config'
-import { connectAuthEmulator, getAuth, signInAnonymously, type Auth } from 'firebase/auth'
+import {
+  connectAuthEmulator,
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously,
+  type Auth,
+} from 'firebase/auth'
 import {
   collection,
   connectFirestoreEmulator,
+  deleteDoc,
   doc,
   getDocFromCache,
   getDocFromServer,
@@ -15,6 +22,7 @@ import {
   query,
   serverTimestamp,
   startAfter,
+  updateDoc,
   writeBatch,
   type DocumentData,
   type Firestore,
@@ -27,7 +35,9 @@ export type FamilyComment = {
   author: string
   body: string
   parentId: string | null
+  uid: string
   createdAt: number
+  updatedAt: number | null
 }
 
 type CommentInput = Pick<FamilyComment, 'author' | 'body' | 'parentId'>
@@ -76,20 +86,25 @@ function validatePageId(pageId: string) {
   }
 }
 
-function readableError(error: unknown, writing: boolean): Error {
+type CommentAction = 'read' | 'post' | 'update' | 'delete'
+
+function readableError(error: unknown, action: CommentAction): Error {
   if (error instanceof Error && !('code' in error)) return error
   const code = (error as { code?: string })?.code ?? ''
   if (code.includes('permission-denied')) {
     return new Error(
-      writing
+      action === 'post'
         ? '등록하지 못했어요. 방금 댓글을 남겼다면 15초 뒤에 다시 시도해 주세요. 계속되면 운영자에게 알려 주세요.'
-        : '댓글을 불러올 수 없어요. 운영자에게 알려 주세요.'
+        : action === 'read'
+          ? '댓글을 불러올 수 없어요. 운영자에게 알려 주세요.'
+          : '이 댓글을 수정하거나 삭제할 권한이 없어요. 댓글을 남긴 브라우저에서 다시 시도해 주세요.'
     )
   }
   if (
     code.includes('operation-not-allowed') ||
     code.includes('invalid-api-key') ||
-    code.includes('unauthorized-domain')
+    code.includes('unauthorized-domain') ||
+    code.includes('configuration-not-found')
   ) {
     return new Error('댓글 연결을 준비하고 있어요. 운영자에게 알려 주세요.')
   }
@@ -102,14 +117,25 @@ function readableError(error: unknown, writing: boolean): Error {
     code.includes('deadline-exceeded')
   ) {
     return new Error(
-      '인터넷 연결을 확인한 뒤 다시 시도해 주세요. 작성한 내용은 그대로 남아 있어요.'
+      action === 'delete'
+        ? '인터넷 연결을 확인한 뒤 다시 시도해 주세요.'
+        : '인터넷 연결을 확인한 뒤 다시 시도해 주세요. 작성한 내용은 그대로 남아 있어요.'
     )
   }
-  return new Error(
-    writing
-      ? '댓글을 등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
-      : '댓글을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'
-  )
+  if (code.includes('not-found')) {
+    return new Error(
+      action === 'update' || action === 'delete'
+        ? '댓글을 찾을 수 없어요. 목록을 새로 불러와 주세요.'
+        : '댓글 연결을 확인해야 해요. 운영자에게 알려 주세요.'
+    )
+  }
+  const failure = {
+    read: '댓글을 불러오지 못했어요.',
+    post: '댓글을 등록하지 못했어요.',
+    update: '댓글을 수정하지 못했어요.',
+    delete: '댓글을 삭제하지 못했어요.',
+  }[action]
+  return new Error(`${failure} 잠시 뒤 다시 시도해 주세요.`)
 }
 
 function toComment(snapshot: QueryDocumentSnapshot<DocumentData>): FamilyComment {
@@ -119,8 +145,39 @@ function toComment(snapshot: QueryDocumentSnapshot<DocumentData>): FamilyComment
     author: data.author,
     body: data.body,
     parentId: data.parentId,
+    uid: data.uid,
     createdAt: data.createdAt.toMillis(),
+    updatedAt: data.updatedAt?.toMillis() ?? null,
   }
+}
+
+// Observing ownership never signs a reader in or replaces a lost session.
+export function observeCommentUser(callback: (uid: string | null) => void): () => void {
+  const { auth } = getClients()
+  return onAuthStateChanged(auth, (user) => callback(user?.isAnonymous ? user.uid : null))
+}
+
+function validateCommentId(commentId: string) {
+  if (!VALID_ID.test(commentId)) {
+    throw new Error('댓글 목록을 새로 불러온 뒤 다시 시도해 주세요.')
+  }
+}
+
+function validBody(input: string): string {
+  const body = input.trim()
+  if (!body || body.length > 2000) {
+    throw new Error('댓글은 1~2,000자까지 적어 주세요.')
+  }
+  return body
+}
+
+async function existingCommentUser(auth: Auth) {
+  await auth.authStateReady()
+  const user = auth.currentUser
+  if (!user?.isAnonymous) {
+    throw new Error('댓글을 남긴 브라우저에서만 수정하거나 삭제할 수 있어요.')
+  }
+  return user
 }
 
 export async function fetchComments(
@@ -152,20 +209,17 @@ export async function fetchComments(
       hasMore: result.size === PAGE_SIZE,
     }
   } catch (error) {
-    throw readableError(error, false)
+    throw readableError(error, 'read')
   }
 }
 
 export async function postComment(pageId: string, input: CommentInput): Promise<FamilyComment> {
   validatePageId(pageId)
   const author = input.author.trim()
-  const body = input.body.trim()
+  const body = validBody(input.body)
   const parentId = input.parentId
   if (!author || author.length > 24 || /[\r\n]/.test(author)) {
     throw new Error('이름은 한 줄로 1~24자까지 적어 주세요.')
-  }
-  if (!body || body.length > 2000) {
-    throw new Error('댓글은 1~2,000자까지 적어 주세요.')
   }
   if (parentId !== null && !VALID_ID.test(parentId)) {
     throw new Error('답글을 남길 댓글을 다시 선택해 주세요.')
@@ -223,8 +277,63 @@ export async function postComment(pageId: string, input: CommentInput): Promise<
     } catch {
       /* The next refresh will retrieve the canonical server timestamp. */
     }
-    return { id: commentRef.id, author, body, parentId, createdAt }
+    return { id: commentRef.id, author, body, parentId, uid: user.uid, createdAt, updatedAt: null }
   } catch (error) {
-    throw readableError(error, true)
+    throw readableError(error, 'post')
+  }
+}
+
+export async function updateComment(
+  pageId: string,
+  commentId: string,
+  input: string
+): Promise<FamilyComment> {
+  validatePageId(pageId)
+  validateCommentId(commentId)
+  const body = validBody(input)
+  try {
+    const { auth, db } = getClients()
+    const user = await existingCommentUser(auth)
+    const commentRef = doc(db, 'pages', pageId, 'comments', commentId)
+    const original = await getDocFromServer(commentRef)
+    if (!original.exists()) {
+      throw new Error('이미 삭제된 댓글이에요. 목록을 새로 불러와 주세요.')
+    }
+    if (original.data().uid !== user.uid) {
+      throw new Error('댓글을 남긴 브라우저에서만 수정하거나 삭제할 수 있어요.')
+    }
+    // updateDoc cannot recreate a comment deleted while the editor was open.
+    // Replies remain editable even when their original parent is gone.
+    await updateDoc(commentRef, { body, updatedAt: serverTimestamp() })
+    let updatedAt = Date.now()
+    try {
+      const saved = await getDocFromCache(commentRef)
+      updatedAt = saved.data()?.updatedAt?.toMillis() ?? updatedAt
+    } catch {
+      /* A successful write stays successful if its cache entry is unavailable. */
+    }
+    return { ...toComment(original), body, updatedAt }
+  } catch (error) {
+    throw readableError(error, 'update')
+  }
+}
+
+export async function deleteComment(pageId: string, commentId: string): Promise<void> {
+  validatePageId(pageId)
+  validateCommentId(commentId)
+  try {
+    const { auth, db } = getClients()
+    const user = await existingCommentUser(auth)
+    const commentRef = doc(db, 'pages', pageId, 'comments', commentId)
+    const original = await getDocFromServer(commentRef)
+    // A retry after successful deletion has already achieved the desired state.
+    if (!original.exists()) return
+    if (original.data().uid !== user.uid) {
+      throw new Error('댓글을 남긴 브라우저에서만 수정하거나 삭제할 수 있어요.')
+    }
+    // Hard-delete only this document. Other people's replies remain intact.
+    await deleteDoc(commentRef)
+  } catch (error) {
+    throw readableError(error, 'delete')
   }
 }

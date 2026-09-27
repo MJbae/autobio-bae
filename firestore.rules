@@ -10,6 +10,11 @@ service cloud.firestore {
       return value is string && value.matches('[A-Za-z0-9_-]{1,120}');
     }
 
+    function validBody(body) {
+      return body is string && body.size() >= 1 && body.size() <= 2000
+        && body.matches('[\\s\\S]*\\S[\\s\\S]*');
+    }
+
     function validComment(pageId, commentId) {
       let data = request.resource.data;
       return validId(pageId) && validId(commentId)
@@ -18,8 +23,7 @@ service cloud.firestore {
         && data.uid == request.auth.uid
         && data.author is string && data.author.size() >= 1 && data.author.size() <= 24
         && data.author.matches('[^\r\n]*\\S[^\r\n]*')
-        && data.body is string && data.body.size() >= 1 && data.body.size() <= 2000
-        && data.body.matches('[\\s\\S]*\\S[\\s\\S]*')
+        && validBody(data.body)
         && data.createdAt == request.time
         && (data.parentId == null
           || (validId(data.parentId) && data.parentId != commentId
@@ -40,8 +44,14 @@ service cloud.firestore {
       allow list: if request.query.limit != null && request.query.limit <= 30;
       allow create: if anonymous() && validComment(pageId, commentId)
         && pairedRateLimit(pageId, commentId);
-      // Only the owner, through Firebase Console/Admin SDK, can moderate.
-      allow update, delete: if false;
+      // A visitor's existing anonymous UID owns their comments, regardless of
+      // display name. Keep identity, creation time and reply relationships fixed.
+      allow update: if anonymous() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'updatedAt'])
+        && validBody(request.resource.data.body)
+        && request.resource.data.updatedAt == request.time;
+      // Deleting a parent never deletes another visitor's reply documents.
+      allow delete: if anonymous() && resource.data.uid == request.auth.uid;
     }
 
     function validRateLimit(uid) {

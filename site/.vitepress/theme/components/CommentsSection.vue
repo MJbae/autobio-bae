@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
+  deleteComment,
   fetchComments,
   isCommentsConfigured,
+  observeCommentUser,
   postComment,
+  updateComment,
   type FamilyComment,
 } from '../lib/comments'
 
@@ -34,6 +37,15 @@ const announcement = ref('')
 const authorInput = ref<HTMLInputElement | null>(null)
 const bodyInput = ref<HTMLTextAreaElement | null>(null)
 const composer = ref<HTMLFormElement | null>(null)
+const section = ref<HTMLElement | null>(null)
+const currentUid = ref<string | null>(null)
+const editingId = ref<string | null>(null)
+const editBody = ref('')
+const editError = ref('')
+const editInput = ref<HTMLTextAreaElement | null>(null)
+const savingEdit = ref(false)
+const deletingId = ref<string | null>(null)
+const deleteError = ref<{ id: string; message: string } | null>(null)
 const now = ref(0)
 const cooldownUntil = ref(0)
 const cooldownSeconds = computed(() =>
@@ -45,7 +57,11 @@ let restoringDraft = false
 let activePageId = ''
 let requestVersion = 0
 let cooldownTimer: ReturnType<typeof setInterval> | undefined
-const locallyPostedIds = new Set<string>()
+let stopObservingUser: (() => void) | undefined
+// A fetch started before a successful write must not undo that write in the UI.
+const localComments = new Map<string, FamilyComment>()
+const deletedCommentIds = new Set<string>()
+const editButtons = new Map<string, HTMLButtonElement>()
 
 function readLocal(key: string): string | null {
   try {
@@ -121,12 +137,14 @@ async function loadComments(more = false) {
   try {
     const result = await fetchComments(pageId, more ? cursor.value : undefined)
     if (version !== requestVersion || pageId !== props.pageId) return
-    // A reader may post while the initial request is still in flight.
-    const existing = more
-      ? comments.value
-      : comments.value.filter((comment) => locallyPostedIds.has(comment.id))
-    const seen = new Set(existing.map((comment) => comment.id))
-    comments.value = [...existing, ...result.comments.filter((comment) => !seen.has(comment.id))]
+    const merged = new Map<string, FamilyComment>()
+    for (const comment of [...(more ? comments.value : []), ...result.comments]) {
+      if (!deletedCommentIds.has(comment.id)) {
+        merged.set(comment.id, localComments.get(comment.id) ?? comment)
+      }
+    }
+    for (const comment of localComments.values()) merged.set(comment.id, comment)
+    comments.value = [...merged.values()].sort((a, b) => b.createdAt - a.createdAt)
     cursor.value = result.cursor
     hasMore.value = result.hasMore
   } catch (error) {
@@ -152,7 +170,15 @@ function openPage() {
   replyTo.value = draft?.replyTo ?? null
   restoringDraft = false
   comments.value = []
-  locallyPostedIds.clear()
+  localComments.clear()
+  deletedCommentIds.clear()
+  editButtons.clear()
+  editingId.value = null
+  editBody.value = ''
+  editError.value = ''
+  savingEdit.value = false
+  deletingId.value = null
+  deleteError.value = null
   cursor.value = undefined
   hasMore.value = false
   loading.value = false
@@ -179,12 +205,30 @@ onMounted(() => {
   mounted = true
   author.value = (readLocal(NAME_KEY) || '').slice(0, 24)
   openPage()
+  if (configured.value) {
+    try {
+      stopObservingUser = observeCommentUser((uid) => {
+        currentUid.value = uid
+        const editedComment = editingId.value && commentById.value.get(editingId.value)
+        if (editedComment && editedComment.uid !== uid) {
+          editingId.value = null
+          editBody.value = ''
+          editError.value = ''
+        }
+      })
+    } catch {
+      // The comment loader explains connection errors; ownership stays hidden.
+      currentUid.value = null
+    }
+  }
 })
 
 onBeforeUnmount(() => {
   saveDraft()
   mounted = false
   requestVersion += 1
+  stopObservingUser?.()
+  editButtons.clear()
   if (cooldownTimer) clearInterval(cooldownTimer)
 })
 
@@ -208,6 +252,119 @@ function dateLabel(timestamp: number) {
 
 function dateTime(timestamp: number) {
   return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toISOString() : undefined
+}
+
+function ownsComment(comment: FamilyComment) {
+  return Boolean(currentUid.value && comment.uid === currentUid.value)
+}
+
+function setEditInput(element: unknown) {
+  editInput.value = element instanceof HTMLTextAreaElement ? element : null
+}
+
+function setEditButton(id: string, element: unknown) {
+  if (element instanceof HTMLButtonElement) editButtons.set(id, element)
+  else editButtons.delete(id)
+}
+
+async function startEdit(comment: FamilyComment) {
+  if (!ownsComment(comment) || editingId.value || deletingId.value) return
+  const version = requestVersion
+  editingId.value = comment.id
+  editBody.value = comment.body
+  editError.value = ''
+  deleteError.value = null
+  announcement.value = '댓글을 수정하고 있어요.'
+  await nextTick()
+  if (!mounted || version !== requestVersion) return
+  editInput.value?.focus({ preventScroll: true })
+  editInput.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+async function cancelEdit() {
+  if (savingEdit.value) return
+  const id = editingId.value
+  const version = requestVersion
+  editingId.value = null
+  editBody.value = ''
+  editError.value = ''
+  announcement.value = '수정을 취소했어요.'
+  await nextTick()
+  if (mounted && version === requestVersion && id) editButtons.get(id)?.focus()
+}
+
+async function saveEdit(comment: FamilyComment) {
+  if (savingEdit.value || editingId.value !== comment.id || !ownsComment(comment)) return
+  const cleanBody = editBody.value.trim()
+  editError.value = !cleanBody
+    ? '남기고 싶은 이야기를 적어 주세요.'
+    : cleanBody.length > 2000
+      ? '댓글은 2,000자까지 적을 수 있어요.'
+      : ''
+  if (editError.value) {
+    await nextTick()
+    editInput.value?.focus()
+    return
+  }
+  const version = requestVersion
+  const pageId = props.pageId
+  savingEdit.value = true
+  announcement.value = ''
+  try {
+    const updated = await updateComment(pageId, comment.id, cleanBody)
+    if (!mounted || version !== requestVersion || pageId !== props.pageId) return
+    localComments.set(updated.id, updated)
+    comments.value = comments.value.map((item) => (item.id === updated.id ? updated : item))
+    if (replyTo.value?.id === updated.id) {
+      replyTo.value = { id: updated.id, author: updated.author, body: updated.body }
+    }
+    editingId.value = null
+    editBody.value = ''
+    editError.value = ''
+    announcement.value = '댓글을 수정했어요.'
+    await nextTick()
+    if (mounted && version === requestVersion) editButtons.get(updated.id)?.focus()
+  } catch (error) {
+    if (!mounted || version !== requestVersion || pageId !== props.pageId) return
+    editError.value = friendlyError(
+      error,
+      '수정하지 못했어요. 작성한 내용은 그대로 있으니 다시 시도해 주세요.'
+    )
+  } finally {
+    if (mounted && version === requestVersion && pageId === props.pageId) savingEdit.value = false
+  }
+}
+
+async function removeComment(comment: FamilyComment) {
+  if (!ownsComment(comment) || deletingId.value || editingId.value) return
+  const confirmation = comment.parentId
+    ? '이 답글을 삭제할까요? 삭제한 답글은 되돌릴 수 없어요.'
+    : '이 댓글을 삭제할까요? 삭제한 댓글은 되돌릴 수 없어요. 달린 답글은 남습니다.'
+  if (!window.confirm(confirmation)) return
+  const version = requestVersion
+  const pageId = props.pageId
+  deletingId.value = comment.id
+  deleteError.value = null
+  announcement.value = ''
+  try {
+    await deleteComment(pageId, comment.id)
+    if (!mounted || version !== requestVersion || pageId !== props.pageId) return
+    deletedCommentIds.add(comment.id)
+    localComments.delete(comment.id)
+    comments.value = comments.value.filter((item) => item.id !== comment.id)
+    if (replyTo.value?.id === comment.id) replyTo.value = null
+    announcement.value = '댓글을 삭제했어요.'
+    await nextTick()
+    if (mounted && version === requestVersion) section.value?.focus({ preventScroll: true })
+  } catch (error) {
+    if (!mounted || version !== requestVersion || pageId !== props.pageId) return
+    deleteError.value = {
+      id: comment.id,
+      message: friendlyError(error, '삭제하지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    }
+  } finally {
+    if (mounted && version === requestVersion && pageId === props.pageId) deletingId.value = null
+  }
 }
 
 async function focusComposer() {
@@ -282,7 +439,7 @@ async function submit() {
         writeLocal(draftKey(pageId), null)
       return
     }
-    locallyPostedIds.add(comment.id)
+    localComments.set(comment.id, comment)
     comments.value = [comment, ...comments.value.filter((item) => item.id !== comment.id)]
     body.value = ''
     replyTo.value = null
@@ -304,6 +461,7 @@ defineExpose({ focusComposer })
 <template>
   <section
     v-if="ready && configured"
+    ref="section"
     class="family-comments"
     aria-labelledby="comments-heading"
     tabindex="-1"
@@ -415,7 +573,12 @@ defineExpose({ focusComposer })
         <article :aria-label="`${comment.author} 님의 ${comment.parentId ? '답글' : '댓글'}`">
           <div class="comment-meta">
             <strong>{{ comment.author }}</strong>
-            <time :datetime="dateTime(comment.createdAt)">{{ dateLabel(comment.createdAt) }}</time>
+            <span class="comment-date">
+              <time :datetime="dateTime(comment.createdAt)">{{
+                dateLabel(comment.createdAt)
+              }}</time>
+              <span v-if="comment.updatedAt" class="comment-edited">(수정됨)</span>
+            </span>
           </div>
           <div v-if="comment.parentId" class="parent-context">
             <template v-if="commentById.has(comment.parentId)">
@@ -424,17 +587,87 @@ defineExpose({ focusComposer })
             </template>
             <span v-else>앞서 남긴 댓글에 대한 답글</span>
           </div>
-          <p class="comment-body">{{ comment.body }}</p>
-          <button
-            v-if="!comment.parentId"
-            class="text-button reply-button"
-            type="button"
-            :disabled="submitting"
-            :aria-label="`${comment.author} 님에게 답글 쓰기`"
-            @click="startReply(comment)"
+          <form
+            v-if="editingId === comment.id"
+            class="comment-editor"
+            :aria-label="`${comment.author} 님의 댓글 수정`"
+            novalidate
+            :aria-busy="savingEdit"
+            @submit.prevent="saveEdit(comment)"
           >
-            답글 쓰기
-          </button>
+            <div class="field">
+              <label :for="`comment-edit-${comment.id}`" class="sr-only">댓글 수정</label>
+              <textarea
+                :id="`comment-edit-${comment.id}`"
+                :ref="setEditInput"
+                v-model="editBody"
+                name="edit-comment"
+                rows="4"
+                maxlength="2000"
+                required
+                :disabled="savingEdit"
+                :aria-invalid="Boolean(editError)"
+                :aria-describedby="editError ? `comment-edit-error-${comment.id}` : undefined"
+              />
+              <p v-if="editBody.length >= 1800" class="character-count">
+                {{ editBody.length.toLocaleString('ko-KR') }} / 2,000
+              </p>
+              <p
+                v-if="editError"
+                :id="`comment-edit-error-${comment.id}`"
+                class="field-error"
+                role="alert"
+              >
+                {{ editError }}
+              </p>
+            </div>
+            <div class="edit-actions">
+              <button class="text-button save-edit" type="submit" :disabled="savingEdit">
+                {{ savingEdit ? '저장하는 중…' : '저장' }}
+              </button>
+              <button class="text-button" type="button" :disabled="savingEdit" @click="cancelEdit">
+                취소
+              </button>
+            </div>
+          </form>
+          <template v-else>
+            <p class="comment-body">{{ comment.body }}</p>
+            <div class="comment-actions">
+              <button
+                v-if="!comment.parentId"
+                class="text-button reply-button"
+                type="button"
+                :disabled="submitting || deletingId === comment.id"
+                :aria-label="`${comment.author} 님에게 답글 쓰기`"
+                @click="startReply(comment)"
+              >
+                답글 쓰기
+              </button>
+              <div v-if="ownsComment(comment)" class="owner-actions">
+                <button
+                  :ref="(element) => setEditButton(comment.id, element)"
+                  class="text-button edit-button"
+                  type="button"
+                  :disabled="Boolean(editingId || deletingId)"
+                  @click="startEdit(comment)"
+                >
+                  수정
+                </button>
+                <button
+                  class="text-button delete-button"
+                  type="button"
+                  :disabled="Boolean(editingId || deletingId)"
+                  :aria-busy="deletingId === comment.id"
+                  @click="removeComment(comment)"
+                >
+                  {{ deletingId === comment.id ? '삭제하는 중…' : '삭제' }}
+                </button>
+              </div>
+            </div>
+          </template>
+          <p v-if="deleteError?.id === comment.id" class="error-message" role="alert">
+            {{ deleteError.message }}
+          </p>
         </article>
       </li>
     </ol>
@@ -691,7 +924,10 @@ button:focus-visible {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.comment-meta time {
+.comment-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   color: var(--comment-muted);
   font-size: 13px;
   line-height: 1.6;
@@ -704,8 +940,32 @@ button:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.reply-button {
-  margin: 4px 0 0 -10px;
+.comment-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  margin: 4px -10px 0;
+}
+.owner-actions {
+  display: flex;
+  margin-left: auto;
+}
+.owner-actions .text-button {
+  color: var(--comment-muted);
+  font-size: 14px;
+}
+.comment-editor {
+  margin-top: 12px;
+}
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 8px -10px 0 0;
+}
+.save-edit {
+  font-weight: 600;
 }
 .parent-context {
   margin-top: 14px;

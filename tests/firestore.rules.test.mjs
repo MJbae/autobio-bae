@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing'
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -231,11 +232,140 @@ test('rate records cannot be created independently, forged, erased, or read by a
   await assertFails(getDocs(query(collection(db, 'rateLimits'), limit(10))))
 })
 
-test('even the author cannot edit/delete comments or write unrelated documents', async () => {
+test('an author can edit a legacy comment immediately and receive a server update timestamp', async () => {
   const db = anonymousDb()
   await assertSucceeds(submission(db).commit())
+  const original = (await getDoc(commentRef(db))).data()
+  assert.equal(original.updatedAt, undefined)
+  await assertSucceeds(
+    updateDoc(commentRef(db), {
+      body: '기억을 다시 확인했어요.\n수정한 내용입니다.',
+      updatedAt: serverTimestamp(),
+    })
+  )
+  const saved = (await getDoc(commentRef(db))).data()
+  assert.equal(saved.body, '기억을 다시 확인했어요.\n수정한 내용입니다.')
+  assert.ok(saved.updatedAt instanceof Timestamp)
+  assert.ok(saved.updatedAt.toMillis() >= original.createdAt.toMillis())
+  assert.deepEqual(
+    { ...saved, body: original.body, updatedAt: undefined },
+    { ...original, updatedAt: undefined }
+  )
+  // Editing does not reset or circumvent the global create cooldown.
+  const rate = (await getDoc(doc(db, 'rateLimits', UID))).data()
+  assert.equal(rate.lastCommentAt.toMillis(), original.createdAt.toMillis())
+  await assertFails(submission(db, { page: 'other-page', id: 'still-too-soon' }).commit())
+})
+
+test('editing requires a fresh server timestamp on every update', async () => {
+  await seedComments()
+  const ref = commentRef(anonymousDb(), PAGE, 'parent')
+  await assertFails(updateDoc(ref, { body: 'missing timestamp' }))
+  for (const updatedAt of [null, 'now', Timestamp.fromMillis(1_000), deleteField()]) {
+    await assertFails(updateDoc(ref, { body: 'wrong timestamp', updatedAt }))
+  }
+  await assertSucceeds(updateDoc(ref, { body: 'first edit', updatedAt: serverTimestamp() }))
+  const previousTimestamp = (await getDoc(ref)).data().updatedAt
+  await assertFails(updateDoc(ref, { body: 'stale timestamp', updatedAt: previousTimestamp }))
+  await assertSucceeds(updateDoc(ref, { body: 'second edit', updatedAt: serverTimestamp() }))
+})
+
+test('only the owning anonymous UID may edit or delete, even when names match', async () => {
+  await seedComments()
+  const otherDb = anonymousDb('another-member')
+  const unsignedDb = environment.unauthenticatedContext().firestore()
+  const nonAnonymousDb = environment
+    .authenticatedContext(UID, { firebase: { sign_in_provider: 'password', identities: {} } })
+    .firestore()
+  for (const db of [otherDb, unsignedDb, nonAnonymousDb]) {
+    const ref = commentRef(db, PAGE, 'parent')
+    await assertFails(updateDoc(ref, { body: 'forged edit', updatedAt: serverTimestamp() }))
+    await assertFails(deleteDoc(ref))
+  }
+  assert.equal(
+    (await getDoc(commentRef(anonymousDb(), PAGE, 'parent'))).data().body,
+    commentData().body
+  )
+})
+
+test('editing cannot alter or remove identity, creation time, reply links, or add fields', async () => {
+  await seedComments()
+  const ref = commentRef(anonymousDb(), PAGE, 'parent')
+  for (const changes of [
+    { author: '다른 이름' },
+    { author: deleteField() },
+    { uid: 'another-member' },
+    { uid: deleteField() },
+    { createdAt: serverTimestamp() },
+    { createdAt: deleteField() },
+    { parentId: 'existing-reply' },
+    { parentId: deleteField() },
+    { admin: true },
+  ]) {
+    await assertFails(updateDoc(ref, { body: 'edited', updatedAt: serverTimestamp(), ...changes }))
+  }
+  await assertFails(setDoc(ref, { body: 'replacement', updatedAt: serverTimestamp() }))
+})
+
+test('edited bodies must be nonblank strings of at most 2,000 characters', async () => {
+  await seedComments()
+  const ref = commentRef(anonymousDb(), PAGE, 'parent')
+  for (const body of ['', ' \n\t ', '가'.repeat(2001), 42, null, deleteField()]) {
+    await assertFails(updateDoc(ref, { body, updatedAt: serverTimestamp() }))
+  }
+  await assertSucceeds(updateDoc(ref, { body: '가'.repeat(2000), updatedAt: serverTimestamp() }))
+})
+
+test('an author can hard-delete immediately without resetting the create cooldown', async () => {
+  const db = anonymousDb()
+  await assertSucceeds(submission(db).commit())
+  const rate = (await getDoc(doc(db, 'rateLimits', UID))).data()
+  await assertSucceeds(deleteDoc(commentRef(db)))
+  assert.equal((await getDoc(commentRef(db))).exists(), false)
+  assert.deepEqual((await getDoc(doc(db, 'rateLimits', UID))).data(), rate)
+  await assertFails(submission(db, { id: 'still-too-soon' }).commit())
+  // An update never recreates a deleted document.
   await assertFails(updateDoc(commentRef(db), { body: 'changed' }))
-  await assertFails(deleteDoc(commentRef(db)))
+})
+
+test('deleting a parent preserves other visitors replies and their owners can still edit and delete them', async () => {
+  await seedComments()
+  const replyUid = 'another-member'
+  const ownerDb = anonymousDb()
+  const replyDb = anonymousDb(replyUid)
+  await assertSucceeds(
+    submission(replyDb, {
+      id: 'another-reply',
+      uid: replyUid,
+      overrides: { parentId: 'parent' },
+    }).commit()
+  )
+  const replyRef = commentRef(replyDb, PAGE, 'another-reply')
+  const originalReply = (await getDoc(replyRef)).data()
+  await assertSucceeds(deleteDoc(commentRef(ownerDb, PAGE, 'parent')))
+  assert.equal((await getDoc(commentRef(ownerDb, PAGE, 'parent'))).exists(), false)
+  assert.deepEqual((await getDoc(replyRef)).data(), originalReply)
+  await assertFails(deleteDoc(commentRef(ownerDb, PAGE, 'another-reply')))
+  await assertFails(
+    updateDoc(commentRef(ownerDb, PAGE, 'another-reply'), {
+      body: 'parent owner cannot edit replies',
+      updatedAt: serverTimestamp(),
+    })
+  )
+  await assertSucceeds(
+    updateDoc(replyRef, {
+      body: '부모 댓글이 없어도 고칠 수 있어요.',
+      updatedAt: serverTimestamp(),
+    })
+  )
+  assert.equal((await getDoc(replyRef)).data().parentId, 'parent')
+  await assertSucceeds(deleteDoc(replyRef))
+  assert.equal((await getDoc(replyRef)).exists(), false)
+  assert.equal((await getDoc(commentRef(ownerDb, PAGE, 'existing-reply'))).exists(), true)
+})
+
+test('comment ownership does not authorize writes to unrelated documents', async () => {
+  const db = anonymousDb()
   await assertFails(setDoc(doc(db, 'pages', PAGE), { published: true }))
   await assertFails(setDoc(doc(db, 'private', 'settings'), { admin: true }))
 })
