@@ -21,7 +21,7 @@ import { decadeComments } from '../site/.vitepress/markdown/decade-comments.ts'
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const mainFilename = '연대별_서사_소재_정리.md'
 const original = readFileSync(path.join(repo, mainFilename), 'utf8')
-const sourceHeadings = [...original.matchAll(/^## (.+)$/gm)].map((match) => ({
+const sourceHeadings = [...original.matchAll(/^#{1,2} (.+)$/gm)].map((match) => ({
   title: match[1],
   start: match.index,
   bodyStart: match.index + match[0].length + 1,
@@ -71,11 +71,41 @@ test('원본에 있는 연대와 전체글을 생성하며 제목과 모든 본�
     assert.equal(chapter.url, `/read/${decade}s.html`)
     assert.equal(page.data.commentId, chapter.id)
     assert.equal(page.data.kind, 'chapter')
-    assert.equal(page.data.prev?.url ?? null, catalog.chapters[index - 1]?.url ?? null)
-    assert.equal(page.data.next?.url ?? null, catalog.chapters[index + 1]?.url ?? null)
-    assert.equal(page.data.prev?.decade ?? null, catalog.chapters[index - 1]?.decade ?? null)
-    assert.equal(page.data.next?.decade ?? null, catalog.chapters[index + 1]?.decade ?? null)
+    const readingIndex = catalog.readingOrder.findIndex(({ id }) => id === chapter.id)
+    assert.equal(page.data.prev?.url ?? null, catalog.readingOrder[readingIndex - 1]?.url ?? null)
+    assert.equal(page.data.next?.url ?? null, catalog.readingOrder[readingIndex + 1]?.url ?? null)
+    assert.equal(
+      page.data.prev?.decade ?? null,
+      catalog.readingOrder[readingIndex - 1]?.decade ?? null
+    )
+    assert.equal(
+      page.data.next?.decade ?? null,
+      catalog.readingOrder[readingIndex + 1]?.decade ?? null
+    )
     assert.ok(page.data.minutes >= 1)
+  }
+})
+
+test('프롤로그와 에필로그를 분리하고 연대 본문과 앞뒤 읽기를 연결한다', (t) => {
+  const { write, run, readPage } = fixture(t)
+  for (const level of ['#', '##']) {
+    write(
+      mainFilename,
+      `${level} 프롤로그 — 시작\n\n첫 이야기\n\n## 1930년대 — 어린 시절\n\n연대 본문\n\n\`\`\`md\n# 에필로그 — 예시\n\`\`\`\n\n${level} 에필로그: 마무리\n\n마지막 이야기\n`
+    )
+    const { catalog } = run()
+    assert.deepEqual(
+      catalog.readingOrder.map(({ id }) => id),
+      ['life-prologue', 'life-1930s', 'life-epilogue']
+    )
+    assert.equal(readPage('prologue.md').data.next.url, '/read/1930s.html')
+    assert.equal(readPage('1930s.md').data.prev.url, '/read/prologue.html')
+    assert.equal(readPage('1930s.md').data.next.url, '/read/epilogue.html')
+    assert.equal(readPage('epilogue.md').data.prev.url, '/read/1930s.html')
+    assert.equal(readPage('epilogue.md').data.next, null)
+    assert.ok(readPage('prologue.md').content.includes('첫 이야기'))
+    assert.ok(readPage('epilogue.md').content.includes('마지막 이야기'))
+    assert.ok(!readPage('1930s.md').content.includes('마지막 이야기'))
   }
 })
 

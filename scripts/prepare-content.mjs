@@ -110,9 +110,9 @@ function headings(markdown) {
       if (!fence) fence = delimiter[1]
       else if (delimiter[1][0] === fence[0] && delimiter[1].length >= fence.length) fence = null
     } else if (!fence) {
-      const match = line.match(/^## ([^\r\n]+)\r?\n?$/)
-      if (match)
-        result.push({ title: match[1].trim(), start: offset, bodyStart: offset + line.length })
+      const match = line.match(/^(#{1,2}) ([^\r\n]+)\r?\n?$/)
+      if (match && (match[1] === '##' || /^(?:프롤로그|에필로그)(?=$|[\s:：—–-])/u.test(match[2])))
+        result.push({ title: match[2].trim(), start: offset, bodyStart: offset + line.length })
     }
     offset += line.length
   }
@@ -245,6 +245,32 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
     return chapter
   })
 
+  const bookends = sections
+    .filter(({ title }) => /^(?:프롤로그|에필로그)(?=$|[\s:：—–-])/u.test(title))
+    .map((section) => {
+      const label = section.title.startsWith('프롤로그') ? '프롤로그' : '에필로그'
+      const slug = label === '프롤로그' ? 'prologue' : 'epilogue'
+      const nextSection = sections[sections.indexOf(section) + 1]
+      const content = main.body.slice(section.bodyStart, nextSection?.start ?? main.body.length)
+      const body = `# ${section.title}\n${content}`
+      const chapter = {
+        id: `life-${slug}`,
+        title: section.title,
+        subtitle: section.title.slice(label.length).replace(/^[\s:：—–-]+/u, ''),
+        description: summary(firstParagraph(content)),
+        url: `/read/${slug}.html`,
+        decade: label,
+        minutes: readingMinutes(body),
+      }
+      register({ ...chapter, filename: `${slug}.md`, body, kind: 'chapter', source: mainFilename })
+      return chapter
+    })
+  const readingOrder = [...chapters, ...bookends].sort(
+    (a, b) =>
+      sections.findIndex(({ title }) => title === a.title) -
+      sections.findIndex(({ title }) => title === b.title)
+  )
+
   const fullStory = {
     id: 'life-story',
     title: '연대별 소재 전체 보기',
@@ -359,7 +385,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
 
   const outputs = new Map(
     pages.map((page) => {
-      const index = chapters.findIndex(({ id }) => id === page.id)
+      const index = readingOrder.findIndex(({ id }) => id === page.id)
       const neighbor = (chapter) =>
         chapter ? { title: chapter.title, decade: chapter.decade, url: chapter.url } : null
       const metadata = {
@@ -369,8 +395,8 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
         kind: page.kind,
         decade: page.decade,
         minutes: page.minutes,
-        prev: page.kind === 'chapter' ? neighbor(chapters[index - 1]) : null,
-        next: page.kind === 'chapter' ? neighbor(chapters[index + 1]) : null,
+        prev: page.kind === 'chapter' ? neighbor(readingOrder[index - 1]) : null,
+        next: page.kind === 'chapter' ? neighbor(readingOrder[index + 1]) : null,
         outline: [2, 3],
       }
       if (page.date !== undefined) metadata.date = page.date
@@ -381,6 +407,7 @@ export function prepareContent({ root = projectRoot, logger = console } = {}) {
     title: '아버지의 기록',
     introduction: plainText(main.body.slice(0, sections[0].start).replace(/^# [^\r\n]+\r?\n/, '')),
     chapters,
+    readingOrder,
     documents,
     fullStory,
   }

@@ -22,7 +22,7 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   await page.goto('./')
   await expect(page.getByRole('heading', { name: '아버지의 기록', exact: true })).toBeVisible()
   const chapterList = page.getByRole('navigation', { name: '연대별 소재', exact: true })
-  await expect(chapterList.locator('a.chapter-row')).toHaveCount(chapters.length)
+  await expect(chapterList.locator('a.chapter-row')).toHaveCount(chapters.length + 2)
   await expect(page.locator('.resume-link')).toHaveCount(0)
   await expect(page.getByRole('searchbox')).toHaveCount(0)
   await expect(page.getByRole('group', { name: '자료 종류' })).toHaveCount(0)
@@ -46,6 +46,26 @@ test('간결한 이야기 목록에서 연대를 골라 원문을 읽는다', as
   await expectNoHorizontalOverflow(page)
   await page.screenshot({ path: `test-results/${info.project.name}-reader.png`, fullPage: true })
   expect(errors).toEqual([])
+})
+
+test('목록에서 프롤로그와 에필로그를 읽고 연대 본문으로 이동한다', async ({ page }) => {
+  await page.goto('./')
+  await page.locator('a.chapter-row[href$="/read/prologue.html"]').click()
+  await expect(page.locator('.article-header h1')).toContainText('프롤로그')
+  await expect(page.locator('.story-content')).toContainText('내 논을 파는 한이 있어도')
+  await page.locator('.next-chapter').click()
+  await expect(page).toHaveURL(new RegExp(`/read/${first.year}s\\.html$`))
+  await page.goto('read/2020s.html')
+  await expect(page.locator('.story-content')).not.toContainText(
+    '다시 젊어져도 나는 이 길을 걷겠다'
+  )
+  await page.locator('.next-chapter').click()
+  await expect(page).toHaveURL(/read\/epilogue\.html$/)
+  await expect(page.locator('.article-header h1')).toContainText('에필로그')
+  await expect(page.locator('.story-content')).toContainText(
+    '누군가 다시 젊은 날로 돌아갈 수 있다면'
+  )
+  await expectNoHorizontalOverflow(page)
 })
 
 test('이어서 읽기에 저장된 옛 제목도 현재 원고의 제목으로 보여 준다', async ({ page }) => {
@@ -137,5 +157,5 @@ test('전체 글을 한 번에 읽고 잘못된 주소에서 목록으로 돌아
   await page.goto('missing-page.html')
   await expect(page.getByRole('heading', { name: '이야기를 찾지 못했습니다.' })).toBeVisible()
   await page.getByRole('link', { name: '목록으로 돌아가기', exact: true }).click()
-  await expect(page.locator('.chapter-row')).toHaveCount(chapters.length)
+  await expect(page.locator('.chapter-row')).toHaveCount(chapters.length + 2)
 })

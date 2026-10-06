@@ -18,7 +18,7 @@ type Reading = { id: string; title: string; url: string }
 type Chapter = Reading & { subtitle: string; decade: string }
 type SavedReading = Reading & { scroll: number; progress: number }
 const catalog = rawCatalog as {
-  chapters: Chapter[]
+  readingOrder: Chapter[]
   documents: Reading[]
   fullStory: Reading
 }
@@ -172,14 +172,15 @@ onMounted(() => {
       typeof saved.id === 'string' &&
       Number.isFinite(saved.scroll)
     ) {
-      const entry = [...catalog.chapters, ...catalog.documents, catalog.fullStory].find(
+      const entry = [...catalog.readingOrder, ...catalog.documents, catalog.fullStory].find(
         (item) => item.id === saved.id
       )
       if (entry)
         lastRead.value = {
           ...saved,
           title:
-            catalog.chapters.find((chapter) => chapter.id === entry.id)?.subtitle || entry.title,
+            catalog.readingOrder.find((chapter) => chapter.id === entry.id)?.subtitle ||
+            entry.title,
           url: withBase(entry.url),
         }
     }
@@ -224,7 +225,7 @@ onBeforeUnmount(() => {
       </a>
       <nav class="chapter-list" aria-label="연대별 소재">
         <a
-          v-for="chapter in catalog.chapters"
+          v-for="chapter in catalog.readingOrder"
           :key="chapter.id"
           class="chapter-row"
           :href="withBase(chapter.url)"
