@@ -6,7 +6,7 @@ export default defineConfig({
   fullyParallel: true,
   retries: 0,
   reporter: 'list',
-  use: { baseURL: 'http://127.0.0.1:4183/bae-memoir/', trace: 'retain-on-failure' },
+  use: { baseURL: 'http://127.0.0.1:4183/autobio-bae/', trace: 'retain-on-failure' },
   projects: [
     { name: 'phone', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } },
     {
@@ -22,11 +22,11 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run build && npm run preview -- --port 4183',
-    url: 'http://127.0.0.1:4183/bae-memoir/',
+    url: 'http://127.0.0.1:4183/autobio-bae/',
     reuseExistingServer: false,
     timeout: 120000,
     env: {
-      SITE_BASE: '/bae-memoir/',
+      SITE_BASE: '/autobio-bae/',
       VITE_FIREBASE_API_KEY: '',
       VITE_FIREBASE_AUTH_DOMAIN: '',
       VITE_FIREBASE_PROJECT_ID: '',
